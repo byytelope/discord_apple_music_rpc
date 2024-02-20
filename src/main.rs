@@ -1,16 +1,16 @@
 use std::{
     thread,
-    time::{Duration, SystemTime},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use discord_rich_presence::{
-    activity::{Activity, Assets, Button},
+    activity::{Activity, Assets, Button, Timestamps},
     DiscordIpc, DiscordIpcClient,
 };
 use dotenv::dotenv;
 use fern::{log_file, Dispatch, InitError};
 use http_cache_surf::{Cache, CacheMode, HttpCache, HttpCacheOptions, MokaManager};
-use log::{info, LevelFilter};
+use log::LevelFilter;
 use osascript::{self, JavaScript};
 use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
 use serde::{Deserialize, Serialize};
@@ -58,6 +58,14 @@ fn truncate(text: &str, max_length: usize) -> &str {
         Some((idx, _)) => &text[..idx],
         None => text,
     }
+}
+
+fn current_time_as_i64() -> i64 {
+    let start = SystemTime::now();
+    let since_the_epoch = start
+        .duration_since(UNIX_EPOCH)
+        .expect("Time went backwards");
+    since_the_epoch.as_secs() as i64
 }
 
 fn macos_ver() -> f32 {
@@ -162,9 +170,10 @@ fn setup_logging(verbosity: LevelFilter) -> Result<(), InitError> {
                 msg
             ))
         })
-        .chain(log_file(
-            "/Users/mohamedshadhaan/Library/Logs/discord_apple_music_rpc.log",
-        )?);
+        .chain(log_file(format!(
+            "{}/Library/Logs/discord_apple_music_rpc.log",
+            std::env::var("HOME").unwrap(),
+        ))?);
 
     // let stdout_config = fern::Dispatch::new()
     //     .format(|out, message, record| {
@@ -197,11 +206,13 @@ fn setup_logging(verbosity: LevelFilter) -> Result<(), InitError> {
 #[tokio::main]
 async fn main() {
     dotenv().ok();
-    setup_logging(LevelFilter::Info).expect("Failed to initialize logs.");
+    setup_logging(LevelFilter::Info).expect("Failed to initialize logs");
 
     println!("Starting RPC...");
 
-    let client_id = std::env::var("CLIENT_ID").expect("Client ID not set.");
+    let client_id = std::env::var("CLIENT_ID")
+        .map_err(|err| log::error!("{}", err))
+        .unwrap();
 
     let app_name = if macos_ver() >= 10.15 {
         "Music"
@@ -209,7 +220,7 @@ async fn main() {
         "iTunes"
     };
 
-    info!("Waiting for Discord...");
+    log::info!("Waiting for Discord...");
 
     loop {
         let is_discord_open = get_is_open("Discord");
@@ -221,23 +232,27 @@ async fn main() {
 
         match DiscordIpcClient::new(&client_id) {
             Ok(mut client) => {
-                client.connect().expect("Failed to connect to client.");
+                client
+                    .connect()
+                    .map_err(|err| log::error!("{}", err))
+                    .unwrap();
 
-                loop {
+                'player: loop {
                     let player_state = get_player_state(app_name);
-                    info!("Player status: {:?}", player_state);
+                    log::info!("Player status: {:?}", player_state);
 
                     if let PlayerState::Playing = player_state {
                         let current_song = get_current_song(app_name);
-                        info!("Currently playing: {:#?}", current_song);
+                        log::info!("Currently playing: {:#?}", current_song);
 
                         let album_info = get_album(&current_song).await.unwrap();
-                        info!("Album info: {:#?}", album_info);
+                        log::info!("Album info: {:#?}", album_info);
 
                         let assets = Assets::new()
                             .small_image("apple_music_logo")
                             .large_image(&album_info.artwork)
                             .large_text(&current_song.album);
+
                         let buttons: Vec<Button> = {
                             if album_info.url.is_empty() {
                                 vec![]
@@ -245,17 +260,29 @@ async fn main() {
                                 vec![Button::new("Listen on Apple Music", &album_info.url)]
                             }
                         };
+
                         client
                             .set_activity(
                                 Activity::new()
                                     .state(truncate(&current_song.artist, 128))
                                     .details(truncate(&current_song.name, 128))
+                                    .timestamps(Timestamps::new().start(
+                                        current_time_as_i64() - current_song.player_position as i64,
+                                    ))
                                     .assets(assets)
                                     .buttons(buttons),
                             )
-                            .expect("Failed to set activity.");
+                            .map_err(|err| {
+                                log::error!("{}", err);
+                            })
+                            .unwrap();
+                    } else if get_is_open("Discord") {
+                        client
+                            .clear_activity()
+                            .map_err(|err| log::error!("{}", err))
+                            .unwrap()
                     } else {
-                        client.clear_activity().expect("Failed to clear activity.");
+                        break 'player;
                     }
 
                     thread::sleep(Duration::from_secs(1));
