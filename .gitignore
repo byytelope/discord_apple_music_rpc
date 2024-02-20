@@ -3,3 +3,4 @@
 .vscode
 http-cacache
 *.log
+.DS_Store
