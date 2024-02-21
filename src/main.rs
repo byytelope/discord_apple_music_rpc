@@ -64,7 +64,8 @@ fn current_time_as_i64() -> i64 {
     let start = SystemTime::now();
     let since_the_epoch = start
         .duration_since(UNIX_EPOCH)
-        .expect("Time went backwards");
+        .map_err(|err| log::error!("{}", err))
+        .unwrap();
     since_the_epoch.as_secs() as i64
 }
 
@@ -222,7 +223,7 @@ async fn main() {
 
     log::info!("Waiting for Discord...");
 
-    loop {
+    'main: loop {
         let is_discord_open = get_is_open("Discord");
         let is_music_open = get_is_open(app_name);
 
@@ -232,10 +233,14 @@ async fn main() {
 
         match DiscordIpcClient::new(&client_id) {
             Ok(mut client) => {
-                client
+                let client_err = client
                     .connect()
                     .map_err(|err| log::error!("{}", err))
-                    .unwrap();
+                    .is_err();
+
+                if client_err {
+                    continue 'main;
+                }
 
                 'player: loop {
                     let player_state = get_player_state(app_name);
@@ -277,10 +282,14 @@ async fn main() {
                             })
                             .unwrap();
                     } else if get_is_open("Discord") {
-                        client
+                        let client_err = client
                             .clear_activity()
                             .map_err(|err| log::error!("{}", err))
-                            .unwrap()
+                            .is_err();
+
+                        if client_err {
+                            break 'player;
+                        }
                     } else {
                         break 'player;
                     }
