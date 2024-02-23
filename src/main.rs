@@ -1,4 +1,5 @@
 use std::{
+    process::Command,
     thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -7,14 +8,10 @@ use discord_rich_presence::{
     activity::{Activity, Assets, Button, Timestamps},
     DiscordIpc, DiscordIpcClient,
 };
-use dotenv::dotenv;
-use fern::{log_file, Dispatch, InitError};
 use http_cache_surf::{Cache, CacheMode, HttpCache, HttpCacheOptions, MokaManager};
-use log::LevelFilter;
-use osascript::{self, JavaScript};
+use osascript::JavaScript;
 use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
 use serde::{Deserialize, Serialize};
-use sysinfo::System;
 
 const FRAGMENT: &AsciiSet = &CONTROLS.add(b' ').add(b'"').add(b'<').add(b'>').add(b'`');
 
@@ -70,13 +67,23 @@ fn current_time_as_i64() -> i64 {
 }
 
 fn macos_ver() -> f32 {
-    System::os_version()
+    let output = Command::new("sh")
+        .arg("-c")
+        .arg("sw_vers | grep ProductVersion | awk '{print $2}'")
+        .output()
+        .map_err(|err| log::error!("{}", err))
         .unwrap()
-        .rsplit_once('.')
-        .unwrap()
-        .0
-        .parse::<f32>()
-        .unwrap()
+        .stdout;
+
+    let ver_str = String::from_utf8_lossy(&output);
+    let ver_parts = ver_str.split('.').collect::<Vec<&str>>();
+
+    let major = ver_parts[0];
+    let minor = ver_parts[1];
+
+    let ver_float_str = format!("{}.{}", major, minor);
+
+    ver_float_str.parse::<f32>().unwrap()
 }
 
 fn get_is_open(app_name: &str) -> bool {
@@ -130,10 +137,12 @@ async fn get_album(song_info: &Song) -> surf::Result<Album> {
         None => "album",
         Some(_) => "song",
     };
+
     let url = format!(
         "https://itunes.apple.com/search?media=music&entity={}&limit=1&term={}",
         entity, encoded_query
     );
+
     let res = surf::client()
         .with(Cache(HttpCache {
             mode: CacheMode::Default,
@@ -142,12 +151,15 @@ async fn get_album(song_info: &Song) -> surf::Result<Album> {
         }))
         .recv_json::<serde_json::Value>(surf::get(url))
         .await?;
+
     let obj_arr = res.get("results").unwrap();
+
     if let Some(obj) = obj_arr.get(0) {
         let artwork = obj
             .get("artworkUrl100")
             .map(|s| s.to_string())
             .unwrap_or_else(|| "no_art".to_string());
+
         let url = obj
             .get("collectionViewUrl")
             .map(|s| s.to_string())
@@ -159,9 +171,9 @@ async fn get_album(song_info: &Song) -> surf::Result<Album> {
     }
 }
 
-fn setup_logging(verbosity: LevelFilter) -> Result<(), InitError> {
-    let base_config = Dispatch::new().level(verbosity);
-    let file_config = Dispatch::new()
+fn setup_logging(verbosity: log::LevelFilter) -> Result<(), fern::InitError> {
+    fern::Dispatch::new()
+        .level(verbosity)
         .format(|out, msg, rec| {
             out.finish(format_args!(
                 "{} [{}::{}] {}",
@@ -171,34 +183,10 @@ fn setup_logging(verbosity: LevelFilter) -> Result<(), InitError> {
                 msg
             ))
         })
-        .chain(log_file(format!(
+        .chain(fern::log_file(format!(
             "{}/Library/Logs/discord_apple_music_rpc.log",
             std::env::var("HOME").unwrap(),
-        ))?);
-
-    // let stdout_config = fern::Dispatch::new()
-    //     .format(|out, message, record| {
-    //         if record.level() > log::LevelFilter::Info && record.target() == "cmd_program" {
-    //             out.finish(format_args!(
-    //                 "DEBUG @ {}: {}",
-    //                 humantime::format_rfc3339_seconds(SystemTime::now()),
-    //                 message
-    //             ))
-    //         } else {
-    //             out.finish(format_args!(
-    //                 "[{} {} {}] {}",
-    //                 humantime::format_rfc3339_seconds(SystemTime::now()),
-    //                 record.level(),
-    //                 record.target(),
-    //                 message
-    //             ))
-    //         }
-    //     })
-    //     .chain(std::io::stdout());
-
-    base_config
-        .chain(file_config)
-        // .chain(stdout_config)
+        ))?)
         .apply()?;
 
     Ok(())
@@ -206,10 +194,10 @@ fn setup_logging(verbosity: LevelFilter) -> Result<(), InitError> {
 
 #[tokio::main]
 async fn main() {
-    dotenv().ok();
-    setup_logging(LevelFilter::Info).expect("Failed to initialize logs");
+    dotenv::dotenv().ok();
+    setup_logging(log::LevelFilter::Info).expect("Failed to initialize logs");
 
-    println!("Starting RPC...");
+    log::info!("Starting RPC...");
 
     let client_id = std::env::var("CLIENT_ID")
         .map_err(|err| log::error!("{}", err))
