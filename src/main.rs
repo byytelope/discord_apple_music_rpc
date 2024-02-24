@@ -1,196 +1,14 @@
-use std::{
-    process::Command,
-    thread,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+mod models;
+mod osascript;
+mod utils;
+
+use std::{thread, time::Duration};
+
+use crate::{
+    models::PlayerState,
+    osascript::{get_album, get_current_song, get_is_open, get_player_state},
+    utils::{current_time_as_u64, macos_ver, setup_logging, truncate},
 };
-
-use discord_rich_presence::{
-    activity::{Activity, Assets, Button, Timestamps},
-    DiscordIpc, DiscordIpcClient,
-};
-use http_cache_surf::{Cache, CacheMode, HttpCache, HttpCacheOptions, MokaManager};
-use osascript::JavaScript;
-use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
-use serde::{Deserialize, Serialize};
-
-const FRAGMENT: &AsciiSet = &CONTROLS.add(b' ').add(b'"').add(b'<').add(b'>').add(b'`');
-
-#[derive(Debug)]
-enum PlayerState {
-    Playing,
-    Paused,
-    Stopped,
-    Unknown,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct Song {
-    id: u32,
-    name: String,
-    artist: String,
-    album: String,
-    year: u32,
-    duration: f32,
-    #[serde(rename = "playerPosition")]
-    player_position: f32,
-}
-
-#[derive(Debug)]
-struct Album {
-    artwork: String,
-    url: String,
-}
-
-impl Album {
-    fn new(artwork: String, url: String) -> Self {
-        Self {
-            artwork: artwork.replace('"', ""),
-            url: url.replace('"', ""),
-        }
-    }
-}
-
-fn truncate(text: &str, max_length: usize) -> &str {
-    match text.char_indices().nth(max_length) {
-        Some((idx, _)) => &text[..idx],
-        None => text,
-    }
-}
-
-fn current_time_as_i64() -> i64 {
-    let start = SystemTime::now();
-    let since_the_epoch = start
-        .duration_since(UNIX_EPOCH)
-        .map_err(|err| log::error!("{}", err))
-        .unwrap();
-    since_the_epoch.as_secs() as i64
-}
-
-fn macos_ver() -> f32 {
-    let output = Command::new("sh")
-        .arg("-c")
-        .arg("sw_vers | grep ProductVersion | awk '{print $2}'")
-        .output()
-        .map_err(|err| log::error!("{}", err))
-        .unwrap()
-        .stdout;
-
-    let ver_str = String::from_utf8_lossy(&output);
-    let ver_parts = ver_str.split('.').collect::<Vec<&str>>();
-
-    let major = ver_parts[0];
-    let minor = ver_parts[1];
-
-    let ver_float_str = format!("{}.{}", major, minor);
-
-    ver_float_str.parse::<f32>().unwrap()
-}
-
-fn get_is_open(app_name: &str) -> bool {
-    let script = {
-        let apple_script = format!(
-            "return Application('System Events').processes['{}'].exists();",
-            app_name
-        );
-        JavaScript::new(apple_script.as_str())
-    };
-
-    script.execute().unwrap()
-}
-
-fn get_player_state(app_name: &str) -> PlayerState {
-    let script = {
-        let apple_script = format!("return Application('{}').playerState();", app_name);
-        JavaScript::new(apple_script.as_str())
-    };
-
-    let state_str = script.execute::<String>().unwrap();
-
-    match state_str.as_str() {
-        "playing" => PlayerState::Playing,
-        "paused" => PlayerState::Paused,
-        "stopped" => PlayerState::Stopped,
-        _ => PlayerState::Unknown,
-    }
-}
-
-fn get_current_song(app_name: &str) -> Song {
-    let script = {
-        let apple_script = format!(
-            "const music = Application('{}');
-        return {{
-          ...music.currentTrack().properties(),
-          playerPosition: music.playerPosition(),
-        }};",
-            app_name
-        );
-        JavaScript::new(apple_script.as_str())
-    };
-
-    script.execute::<Song>().unwrap()
-}
-
-async fn get_album(song_info: &Song) -> surf::Result<Album> {
-    let query = format!("{} {}", song_info.artist, song_info.album);
-    let encoded_query = utf8_percent_encode(query.as_str(), FRAGMENT).collect::<String>();
-    let entity = match encoded_query.find("%26") {
-        None => "album",
-        Some(_) => "song",
-    };
-
-    let url = format!(
-        "https://itunes.apple.com/search?media=music&entity={}&limit=1&term={}",
-        entity, encoded_query
-    );
-
-    let res = surf::client()
-        .with(Cache(HttpCache {
-            mode: CacheMode::Default,
-            manager: MokaManager::default(),
-            options: HttpCacheOptions::default(),
-        }))
-        .recv_json::<serde_json::Value>(surf::get(url))
-        .await?;
-
-    let obj_arr = res.get("results").unwrap();
-
-    if let Some(obj) = obj_arr.get(0) {
-        let artwork = obj
-            .get("artworkUrl100")
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| "no_art".to_string());
-
-        let url = obj
-            .get("collectionViewUrl")
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| "".to_string());
-
-        Ok(Album::new(artwork, url))
-    } else {
-        Ok(Album::new("no_art".to_string(), "".to_string()))
-    }
-}
-
-fn setup_logging(verbosity: log::LevelFilter) -> Result<(), fern::InitError> {
-    fern::Dispatch::new()
-        .level(verbosity)
-        .format(|out, msg, rec| {
-            out.finish(format_args!(
-                "{} [{}::{}] {}",
-                humantime::format_rfc3339_seconds(SystemTime::now()),
-                rec.target(),
-                rec.level(),
-                msg
-            ))
-        })
-        .chain(fern::log_file(format!(
-            "{}/Library/Logs/discord_apple_music_rpc.log",
-            std::env::var("HOME").unwrap(),
-        ))?)
-        .apply()?;
-
-    Ok(())
-}
 
 #[tokio::main]
 async fn main() {
@@ -200,6 +18,9 @@ async fn main() {
     log::info!("Starting RPC...");
 
     let client_id = std::env::var("CLIENT_ID")
+        .map_err(|err| log::error!("{}", err))
+        .unwrap()
+        .parse::<u64>()
         .map_err(|err| log::error!("{}", err))
         .unwrap();
 
@@ -219,76 +40,84 @@ async fn main() {
             continue;
         }
 
-        match DiscordIpcClient::new(&client_id) {
-            Ok(mut client) => {
+        let mut client = discord_presence::Client::new(client_id);
+
+        client
+            .on_ready(|_ctx| {
+                log::info!("Connected to Discord RPC");
+            })
+            .persist();
+
+        client
+            .on_error(|ctx| {
+                log::error!("{:?}", ctx.event);
+            })
+            .persist();
+
+        client.start();
+        client
+            .block_until_event(discord_presence::Event::Ready)
+            .map_err(|err| log::error!("{}", err))
+            .unwrap();
+
+        if !discord_presence::Client::is_ready() {
+            continue 'main;
+        }
+
+        'player: loop {
+            let player_state = get_player_state(app_name);
+            log::info!("Player status: {:?}", player_state);
+
+            if let PlayerState::Playing = player_state {
+                let current_song = get_current_song(app_name);
+                log::info!("Currently playing: {:#?}", current_song);
+
+                let album_info = get_album(&current_song).await.unwrap();
+                log::info!("Album info: {:#?}", album_info);
+
+                client
+                    .set_activity(|act| {
+                        act.state(truncate(&current_song.artist, 128))
+                            .details(truncate(&current_song.name, 128))
+                            .timestamps(|stamp| {
+                                stamp.start(
+                                    current_time_as_u64() - current_song.player_position as u64,
+                                )
+                            })
+                            .assets(|ass| {
+                                ass.small_image("apple_music_logo")
+                                    .large_image(&album_info.artwork)
+                                    .large_text(truncate(&current_song.album, 128))
+                            })
+                            .append_buttons(|butt| {
+                                let url = if !album_info.url.is_empty() {
+                                    &album_info.url
+                                } else {
+                                    "https://music.apple.com/"
+                                };
+
+                                butt.label("Listen on Apple Music").url(url)
+                            })
+                    })
+                    .map_err(|err| {
+                        log::error!("{}", err);
+                    })
+                    .unwrap();
+            } else if get_is_open("Discord") {
                 let client_err = client
-                    .connect()
+                    .clear_activity()
                     .map_err(|err| log::error!("{}", err))
                     .is_err();
 
                 if client_err {
-                    continue 'main;
+                    break 'player;
                 }
-
-                'player: loop {
-                    let player_state = get_player_state(app_name);
-                    log::info!("Player status: {:?}", player_state);
-
-                    if let PlayerState::Playing = player_state {
-                        let current_song = get_current_song(app_name);
-                        log::info!("Currently playing: {:#?}", current_song);
-
-                        let album_info = get_album(&current_song).await.unwrap();
-                        log::info!("Album info: {:#?}", album_info);
-
-                        let assets = Assets::new()
-                            .small_image("apple_music_logo")
-                            .large_image(&album_info.artwork)
-                            .large_text(&current_song.album);
-
-                        let buttons: Vec<Button> = {
-                            if album_info.url.is_empty() {
-                                vec![]
-                            } else {
-                                vec![Button::new("Listen on Apple Music", &album_info.url)]
-                            }
-                        };
-
-                        client
-                            .set_activity(
-                                Activity::new()
-                                    .state(truncate(&current_song.artist, 128))
-                                    .details(truncate(&current_song.name, 128))
-                                    .timestamps(Timestamps::new().start(
-                                        current_time_as_i64() - current_song.player_position as i64,
-                                    ))
-                                    .assets(assets)
-                                    .buttons(buttons),
-                            )
-                            .map_err(|err| {
-                                log::error!("{}", err);
-                            })
-                            .unwrap();
-                    } else if get_is_open("Discord") {
-                        let client_err = client
-                            .clear_activity()
-                            .map_err(|err| log::error!("{}", err))
-                            .is_err();
-
-                        if client_err {
-                            break 'player;
-                        }
-                    } else {
-                        break 'player;
-                    }
-
-                    thread::sleep(Duration::from_secs(1));
-                    continue;
-                }
+            } else {
+                break 'player;
             }
-            Err(err) => {
-                eprintln!("{}", err)
-            }
+
+            thread::sleep(Duration::from_secs(1));
+            continue;
         }
 
         thread::sleep(Duration::from_secs(1));
