@@ -65,7 +65,7 @@ pub fn setup_logging(verbosity: log::LevelFilter) -> Result<(), fern::InitError>
         .level(verbosity)
         .format(|out, msg, rec| {
             out.finish(format_args!(
-                "{} [{}::{}] {}",
+                "{} [{} -> {}] {}",
                 humantime::format_rfc3339_seconds(SystemTime::now()),
                 rec.target(),
                 rec.level(),

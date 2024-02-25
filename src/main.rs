@@ -33,6 +33,8 @@ async fn main() {
     log::info!("Waiting for Discord...");
 
     'main: loop {
+        thread::sleep(Duration::from_secs(1));
+
         let is_discord_open = get_is_open("Discord");
         let is_music_open = get_is_open(app_name);
 
@@ -65,44 +67,49 @@ async fn main() {
         }
 
         'player: loop {
+            thread::sleep(Duration::from_secs(1));
+
             let player_state = get_player_state(app_name);
             log::info!("Player status: {:?}", player_state);
 
             if let PlayerState::Playing = player_state {
-                let current_song = get_current_song(app_name);
-                log::info!("Currently playing: {:#?}", current_song);
+                if let Some(current_song) = get_current_song(app_name) {
+                    log::info!("Currently playing: {:#?}", current_song);
 
-                let album_info = get_album(&current_song).await.unwrap();
-                log::info!("Album info: {:#?}", album_info);
+                    let album_info = get_album(&current_song).await.unwrap();
+                    log::info!("Album info: {:#?}", album_info);
 
-                client
-                    .set_activity(|act| {
-                        act.state(truncate(&current_song.artist, 128))
-                            .details(truncate(&current_song.name, 128))
-                            .timestamps(|stamp| {
-                                stamp.start(
-                                    current_time_as_u64() - current_song.player_position as u64,
-                                )
-                            })
-                            .assets(|ass| {
-                                ass.small_image("apple_music_logo")
-                                    .large_image(&album_info.artwork)
-                                    .large_text(truncate(&current_song.album, 128))
-                            })
-                            .append_buttons(|butt| {
-                                let url = if !album_info.url.is_empty() {
-                                    &album_info.url
-                                } else {
-                                    "https://music.apple.com/"
-                                };
+                    client
+                        .set_activity(|act| {
+                            act.state(truncate(&current_song.artist, 128))
+                                .details(truncate(&current_song.name, 128))
+                                .timestamps(|stamp| {
+                                    stamp.start(
+                                        current_time_as_u64() - current_song.player_position as u64,
+                                    )
+                                })
+                                .assets(|ass| {
+                                    ass.small_image("apple_music_logo")
+                                        .large_image(&album_info.artwork)
+                                        .large_text(truncate(&current_song.album, 128))
+                                })
+                                .append_buttons(|butt| {
+                                    let url = if !album_info.url.is_empty() {
+                                        &album_info.url
+                                    } else {
+                                        "https://music.apple.com/"
+                                    };
 
-                                butt.label("Listen on Apple Music").url(url)
-                            })
-                    })
-                    .map_err(|err| {
-                        log::error!("{}", err);
-                    })
-                    .unwrap();
+                                    butt.label("Listen on Apple Music").url(url)
+                                })
+                        })
+                        .map_err(|err| {
+                            log::error!("{}", err);
+                        })
+                        .unwrap();
+                } else {
+                    continue 'player;
+                }
             } else if get_is_open("Discord") {
                 let client_err = client
                     .clear_activity()
@@ -116,10 +123,7 @@ async fn main() {
                 break 'player;
             }
 
-            thread::sleep(Duration::from_secs(1));
             continue;
         }
-
-        thread::sleep(Duration::from_secs(1));
     }
 }

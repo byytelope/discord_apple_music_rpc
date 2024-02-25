@@ -3,6 +3,7 @@ use std::process::Command;
 use http_cache_surf::{Cache, CacheMode, HttpCache, HttpCacheOptions, MokaManager};
 use percent_encoding::utf8_percent_encode;
 use serde::de::DeserializeOwned;
+use serde_json::Value;
 
 use crate::{
     models::{Album, PlayerState, Song},
@@ -10,7 +11,7 @@ use crate::{
 };
 
 fn run_osascript<T: DeserializeOwned>(script: String) -> Result<T, serde_json::Error> {
-    let function = format!("(function() {{return JSON.stringify({});}})();", script);
+    let function = format!("(() => JSON.stringify({}))();", script);
     let output = Command::new("osascript")
         .arg("-l")
         .arg("JavaScript")
@@ -20,7 +21,6 @@ fn run_osascript<T: DeserializeOwned>(script: String) -> Result<T, serde_json::E
         .map_err(|err| log::error!("{}", err))
         .unwrap()
         .stdout;
-
     let res = String::from_utf8_lossy(&output).to_string();
 
     serde_json::from_str(&res)
@@ -44,7 +44,7 @@ pub fn get_player_state(app_name: &str) -> PlayerState {
         .unwrap()
 }
 
-pub fn get_current_song(app_name: &str) -> Song {
+pub fn get_current_song(app_name: &str) -> Option<Song> {
     let script = format!(
         "{{
           ...Application('{0}').currentTrack().properties(),
@@ -53,9 +53,20 @@ pub fn get_current_song(app_name: &str) -> Song {
         app_name
     );
 
-    run_osascript::<Song>(script)
-        .map_err(|err| log::error!("{}", err))
-        .unwrap()
+    match run_osascript::<Value>(script) {
+        Ok(val) => {
+            if let Some(album) = val.get("album").and_then(|album| album.as_str()) {
+                if !album.is_empty() {
+                    return serde_json::from_value::<Song>(val)
+                        .map_err(|err| log::error!("{}", err))
+                        .ok();
+                }
+            }
+        }
+        Err(err) => log::error!("{}", err),
+    }
+
+    None
 }
 
 pub async fn get_album(song_info: &Song) -> surf::Result<Album> {
