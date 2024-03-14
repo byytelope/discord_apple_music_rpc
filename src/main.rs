@@ -1,5 +1,6 @@
 mod models;
 mod osascript;
+mod setup;
 mod utils;
 
 use std::{thread, time::Duration};
@@ -7,17 +8,17 @@ use std::{thread, time::Duration};
 use crate::{
     models::PlayerState,
     osascript::{get_album, get_current_song, get_is_open, get_player_state},
-    utils::{current_time_as_u64, macos_ver, setup_logging, truncate},
+    setup::setup_logging,
+    utils::{current_time_as_u64, macos_ver, truncate},
 };
 
 #[tokio::main]
 async fn main() {
-    dotenv::dotenv().ok();
     setup_logging(log::LevelFilter::Info).expect("Failed to initialize logs");
 
     log::info!("Starting RPC...");
 
-    let client_id = std::env::var("CLIENT_ID")
+    let client_id = std::env::var("DISCORD_APP_ID")
         .map_err(|err| log::error!("{}", err))
         .unwrap()
         .parse::<u64>()

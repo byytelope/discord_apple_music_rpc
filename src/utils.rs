@@ -1,7 +1,6 @@
 pub const FRAGMENT: &AsciiSet = &CONTROLS.add(b' ').add(b'"').add(b'<').add(b'>').add(b'`');
 
 use std::{
-    fs,
     process::Command,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -35,7 +34,7 @@ pub fn macos_ver() -> f32 {
         .stdout;
 
     let ver_str = String::from_utf8_lossy(&output);
-    let ver_parts = ver_str.split('.').collect::<Vec<&str>>();
+    let ver_parts = ver_str.trim().split('.').collect::<Vec<&str>>();
 
     let major = ver_parts[0];
     let minor = ver_parts[1];
@@ -46,34 +45,4 @@ pub fn macos_ver() -> f32 {
         .parse::<f32>()
         .map_err(|err| log::error!("{}", err))
         .unwrap()
-}
-
-pub fn setup_logging(verbosity: log::LevelFilter) -> Result<(), fern::InitError> {
-    let log_path = format!(
-        "{}/Library/Logs/discord_apple_music_rpc.log",
-        std::env::var("HOME").unwrap()
-    );
-
-    if let Ok(log_meta) = fs::metadata(&log_path) {
-        if log_meta.len() > 20 * 1024 * 1024 {
-            log::info!("Log file larger than 20mb. Removing...");
-            fs::remove_file(&log_path)?;
-        }
-    }
-
-    fern::Dispatch::new()
-        .level(verbosity)
-        .format(|out, msg, rec| {
-            out.finish(format_args!(
-                "{} [{} -> {}] {}",
-                humantime::format_rfc3339_seconds(SystemTime::now()),
-                rec.target(),
-                rec.level(),
-                msg
-            ))
-        })
-        .chain(fern::log_file(log_path)?)
-        .apply()?;
-
-    Ok(())
 }
