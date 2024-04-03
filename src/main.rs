@@ -5,6 +5,8 @@ mod utils;
 
 use std::{thread, time::Duration};
 
+const DISCORD_APP_ID: &str = "996864734957670452";
+
 use crate::{
     models::PlayerState,
     osascript::{get_album, get_current_song, get_is_open, get_player_state},
@@ -18,9 +20,7 @@ async fn main() {
 
     log::info!("Starting RPC...");
 
-    let client_id = std::env::var("DISCORD_APP_ID")
-        .map_err(|err| log::error!("{}", err))
-        .unwrap()
+    let client_id = DISCORD_APP_ID
         .parse::<u64>()
         .map_err(|err| log::error!("{}", err))
         .unwrap();
@@ -35,6 +35,7 @@ async fn main() {
 
     'main: loop {
         thread::sleep(Duration::from_secs(1));
+        println!("main");
 
         let is_discord_open = get_is_open("Discord");
         let is_music_open = get_is_open(app_name);
@@ -69,6 +70,7 @@ async fn main() {
 
         'player: loop {
             thread::sleep(Duration::from_secs(1));
+            println!("player");
 
             let player_state = get_player_state(app_name);
             log::info!("Player status: {:?}", player_state);
@@ -80,7 +82,7 @@ async fn main() {
                     let album_info = get_album(&current_song).await.unwrap();
                     log::info!("Album info: {:#?}", album_info);
 
-                    client
+                    let bruh = client
                         .set_activity(|act| {
                             act.state(truncate(&current_song.artist, 128))
                                 .details(truncate(&current_song.name, 128))

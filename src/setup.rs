@@ -1,10 +1,7 @@
 use std::{fs, time::SystemTime};
 
 pub fn setup_logging(verbosity: log::LevelFilter) -> Result<(), fern::InitError> {
-    let log_path = format!(
-        "{}/Library/Logs/discord_apple_music_rpc.log",
-        std::env::var("HOME").unwrap()
-    );
+    let log_path = format!("{}/Library/Logs/damr.log", std::env::var("HOME").unwrap());
 
     if let Ok(log_meta) = fs::metadata(&log_path) {
         if log_meta.len() > 20 * 1024 * 1024 {

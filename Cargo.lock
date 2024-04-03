@@ -646,8 +646,9 @@ checksum = "212d0f5754cb6769937f4501cc0e67f4f4483c8d2c3e1e922ee9edbe4ab4c7c0"
 
 [[package]]
 name = "discord-presence"
-version = "1.0.1"
-source = "git+https://github.com/jewlexx/discord-presence.git#f9962895b099e595bcd3f9e588d43f476cfe1182"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5b0b42c644ad2150387ded023bedd258052306d67a43d40e36678491c59dec0c"
 dependencies = [
  "byteorder",
  "bytes 1.5.0",
@@ -1182,9 +1183,9 @@ dependencies = [
 
 [[package]]
 name = "indexmap"
-version = "2.2.3"
+version = "2.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "233cf39063f058ea2caae4091bf4a3ef70a653afbc026f5c4a4135d114e3c177"
+checksum = "168fb715dda47215e360912c096649d23d58bf392ac62f73919e831745e40f26"
 dependencies = [
  "equivalent",
  "hashbrown",
