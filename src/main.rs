@@ -35,7 +35,6 @@ async fn main() {
 
     'main: loop {
         thread::sleep(Duration::from_secs(1));
-        println!("main");
 
         let is_discord_open = get_is_open("Discord");
         let is_music_open = get_is_open(app_name);
@@ -70,7 +69,6 @@ async fn main() {
 
         'player: loop {
             thread::sleep(Duration::from_secs(1));
-            println!("player");
 
             let player_state = get_player_state(app_name);
             log::info!("Player status: {:?}", player_state);
@@ -82,7 +80,7 @@ async fn main() {
                     let album_info = get_album(&current_song).await.unwrap();
                     log::info!("Album info: {:#?}", album_info);
 
-                    let bruh = client
+                    client
                         .set_activity(|act| {
                             act.state(truncate(&current_song.artist, 128))
                                 .details(truncate(&current_song.name, 128))

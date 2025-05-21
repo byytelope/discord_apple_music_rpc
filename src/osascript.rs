@@ -70,17 +70,32 @@ pub fn get_current_song(app_name: &str) -> Option<Song> {
 }
 
 pub async fn get_album(song_info: &Song) -> surf::Result<Album> {
-    let query = format!("{} {}", song_info.artist, song_info.album);
-    let encoded_query = utf8_percent_encode(query.as_str(), FRAGMENT).collect::<String>();
-    let entity = match encoded_query.find("%26") {
-        None => "album",
-        Some(_) => "song",
+    let artist_sanitized = if !song_info.album_artist.is_empty() {
+        song_info.album_artist.to_string()
+    } else {
+        song_info
+            .artist
+            .split_once(',')
+            .map(|(first, _)| first)
+            .or_else(|| song_info.artist.split_once('&').map(|(first, _)| first))
+            .unwrap_or(&song_info.artist)
+            .trim()
+            .to_string()
     };
 
+    let query = format!("{} {}", artist_sanitized, song_info.album);
+
+    // Searching without '*' is more accurate
+    let encoded_query = utf8_percent_encode(query.as_str(), FRAGMENT)
+        .collect::<String>()
+        .replace('*', "");
+
     let url = format!(
-        "https://itunes.apple.com/search?media=music&entity={}&limit=1&term={}",
-        entity, encoded_query
+        "https://itunes.apple.com/search?media=music&entity=album&limit=1&term={}",
+        encoded_query
     );
+
+    log::info!("Art URL: {}", url);
 
     let res = surf::client()
         .with(Cache(HttpCache {

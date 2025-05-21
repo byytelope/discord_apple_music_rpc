@@ -34,6 +34,8 @@ pub struct Song {
     pub name: String,
     pub artist: String,
     pub album: String,
+    #[serde(rename = "albumArtist")]
+    pub album_artist: String,
     pub year: u32,
     pub duration: f32,
     #[serde(rename = "playerPosition")]
