@@ -6,45 +6,63 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 
 use crate::{
+    error::{AppError, AppResult},
     models::{ApiResults, PlayerState, Song, SongDetails},
     utils::FRAGMENT,
 };
 
-fn run_osascript<T: DeserializeOwned>(script: String) -> Result<T, serde_json::Error> {
+fn run_osascript<T: DeserializeOwned>(script: String) -> AppResult<T> {
     let function = format!("(() => JSON.stringify({}))();", script);
-    let output = Command::new("osascript")
+    let command_output = Command::new("osascript")
         .arg("-l")
         .arg("JavaScript")
         .arg("-e")
         .arg(&function)
-        .output()
-        .map_err(|err| log::error!("{}", err))
-        .unwrap()
-        .stdout;
-    let res = String::from_utf8_lossy(&output).to_string();
+        .output();
 
-    serde_json::from_str(&res)
+    let output_stdout = match command_output {
+        Ok(o) => {
+            if !o.status.success() {
+                let stderr = String::from_utf8_lossy(&o.stderr);
+                log::debug!("osascript stderr: {}", stderr);
+                // Errors from osascript often indicate issues with Apple Music interaction
+                return Err(AppError::AppleMusic(format!(
+                    "osascript execution failed: {}",
+                    stderr.trim()
+                )));
+            }
+            o.stdout
+        }
+        Err(e) => return Err(AppError::Io(e.to_string())),
+    };
+
+    let res = String::from_utf8_lossy(&output_stdout).to_string();
+
+    serde_json::from_str(&res).map_err(|e| {
+        log::debug!(
+            "Failed to parse osascript output as JSON: {}, output: '{}'",
+            e,
+            res
+        );
+        AppError::Parse(format!("Failed to parse Apple Music script output: {}", e))
+    })
 }
 
-pub fn get_is_open(app_name: &str) -> bool {
+pub fn get_is_open(app_name: &str) -> AppResult<bool> {
     let script = format!(
         "Application('System Events').processes['{}'].exists()",
         app_name
     );
 
     run_osascript(script)
-        .map_err(|err| log::error!("{}", err))
-        .unwrap()
 }
 
-pub fn get_player_state(app_name: &str) -> PlayerState {
+pub fn get_player_state(app_name: &str) -> AppResult<PlayerState> {
     let script = format!("Application('{}').playerState()", app_name);
     run_osascript(script)
-        .map_err(|err| log::error!("{}", err))
-        .unwrap()
 }
 
-pub fn get_current_song(app_name: &str) -> Option<Song> {
+pub fn get_current_song(app_name: &str) -> AppResult<Option<Song>> {
     let script = format!(
         "{{
           ...Application('{0}').currentTrack().properties(),
@@ -55,24 +73,37 @@ pub fn get_current_song(app_name: &str) -> Option<Song> {
 
     match run_osascript::<Value>(script) {
         Ok(val) => {
-            if let Some(album) = val.get("album").and_then(|album| album.as_str()) {
-                if !album.is_empty() {
-                    return serde_json::from_value::<Song>(val)
-                        .map_err(|err| log::error!("{}", err))
-                        .ok();
-                }
+            if val
+                .get("album")
+                .and_then(|a| a.as_str())
+                .is_none_or(|s| s.is_empty())
+            {
+                return Ok(None);
             }
+            serde_json::from_value::<Song>(val)
+                .map(Some)
+                .map_err(|e| AppError::Parse(format!("Failed to parse song data: {}", e)))
         }
-        Err(err) => log::error!("{}", err),
+        Err(AppError::AppleMusic(msg)) => {
+            log::warn!("Assuming no song due to AppleScript error: {}", msg);
+            Ok(None)
+        }
+        Err(e) => {
+            log::error!("Failed to get current song: {}", e);
+            Err(e)
+        }
     }
-
-    None
 }
 
 pub async fn get_details(song_info: &Song) -> surf::Result<SongDetails> {
     let main_url =
-        "https://itunes.apple.com/search?media=music&entity={entity}&limit=3&term={term}";
-    let song_query = format!("{} {}", song_info.artist.replace('&', ""), song_info.name);
+        "https://itunes.apple.com/search?media=music&entity={entity}&limit=1&term={term}";
+    let song_query = format!(
+        "{} {} {}",
+        song_info.artist.replace('&', ""),
+        song_info.name,
+        song_info.album
+    );
 
     // Searching without '*' is more accurate
     let encoded_song_query = utf8_percent_encode(&song_query, FRAGMENT)
@@ -82,6 +113,8 @@ pub async fn get_details(song_info: &Song) -> surf::Result<SongDetails> {
     let song_url = main_url
         .replace("{entity}", "song")
         .replace("{term}", &encoded_song_query);
+
+    log::info!("Searching for song: {}", song_url);
 
     let song_res = surf::client()
         .with(Cache(HttpCache {
