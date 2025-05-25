@@ -6,7 +6,7 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 
 use crate::{
-    models::{Album, PlayerState, Song},
+    models::{ApiResults, PlayerState, Song, SongDetails},
     utils::FRAGMENT,
 };
 
@@ -69,58 +69,87 @@ pub fn get_current_song(app_name: &str) -> Option<Song> {
     None
 }
 
-pub async fn get_album(song_info: &Song) -> surf::Result<Album> {
-    let artist_sanitized = if !song_info.album_artist.is_empty() {
-        song_info.album_artist.to_string()
-    } else {
-        song_info
-            .artist
-            .split_once(',')
-            .map(|(first, _)| first)
-            .or_else(|| song_info.artist.split_once('&').map(|(first, _)| first))
-            .unwrap_or(&song_info.artist)
-            .trim()
-            .to_string()
-    };
-
-    let query = format!("{} {}", artist_sanitized, song_info.album);
+pub async fn get_details(song_info: &Song) -> surf::Result<SongDetails> {
+    let main_url =
+        "https://itunes.apple.com/search?media=music&entity={entity}&limit=3&term={term}";
+    let song_query = format!("{} {}", song_info.artist.replace('&', ""), song_info.name);
 
     // Searching without '*' is more accurate
-    let encoded_query = utf8_percent_encode(query.as_str(), FRAGMENT)
+    let encoded_song_query = utf8_percent_encode(&song_query, FRAGMENT)
         .collect::<String>()
         .replace('*', "");
 
-    let url = format!(
-        "https://itunes.apple.com/search?media=music&entity=album&limit=1&term={}",
-        encoded_query
-    );
+    let song_url = main_url
+        .replace("{entity}", "song")
+        .replace("{term}", &encoded_song_query);
 
-    log::info!("Art URL: {}", url);
-
-    let res = surf::client()
+    let song_res = surf::client()
         .with(Cache(HttpCache {
             mode: CacheMode::Default,
             manager: MokaManager::default(),
             options: HttpCacheOptions::default(),
         }))
-        .recv_json::<serde_json::Value>(surf::get(url))
+        .recv_json::<ApiResults>(surf::get(song_url))
         .await?;
 
-    let obj_arr = res.get("results").unwrap();
+    if song_res.result_count == 0 {
+        let album_artist = if !song_info.album_artist.is_empty() {
+            song_info.album_artist.to_string()
+        } else {
+            song_info
+                .artist
+                .split_once(',')
+                .map(|(first, _)| first)
+                .or_else(|| song_info.artist.split_once('&').map(|(first, _)| first))
+                .unwrap_or(&song_info.artist)
+                .trim()
+                .to_string()
+        };
 
-    if let Some(obj) = obj_arr.get(0) {
-        let artwork = obj
-            .get("artworkUrl100")
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| "no_art".to_string());
+        let album_query = format!("{} {}", album_artist, song_info.album);
 
-        let url = obj
-            .get("collectionViewUrl")
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| "".to_string());
+        // Searching without '*' is more accurate
+        let encoded_album_query = utf8_percent_encode(album_query.as_str(), FRAGMENT)
+            .collect::<String>()
+            .replace('*', "");
 
-        Ok(Album::new(artwork, url))
+        let album_url = main_url
+            .replace("{entity}", "album")
+            .replace("{term}", &encoded_album_query);
+
+        let album_res = surf::client()
+            .with(Cache(HttpCache {
+                mode: CacheMode::Default,
+                manager: MokaManager::default(),
+                options: HttpCacheOptions::default(),
+            }))
+            .recv_json::<ApiResults>(surf::get(album_url))
+            .await?;
+
+        if album_res.result_count > 0 {
+            let album = &album_res.results[0];
+            let artwork = if !album.artwork_url.is_empty() {
+                album.artwork_url.to_string()
+            } else {
+                "no_art".to_string()
+            };
+            Ok(SongDetails::new(
+                artwork,
+                album.album_url.to_string(),
+                album.album_url.to_string(),
+            ))
+        } else {
+            Ok(SongDetails::new(
+                "no_art".to_string(),
+                "".to_string(),
+                "".to_string(),
+            ))
+        }
     } else {
-        Ok(Album::new("no_art".to_string(), "".to_string()))
+        Ok(SongDetails::new(
+            song_res.results[0].artwork_url.to_string(),
+            song_res.results[0].album_url.to_string(),
+            song_res.results[0].song_url.clone().unwrap_or_default(),
+        ))
     }
 }

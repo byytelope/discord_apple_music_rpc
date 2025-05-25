@@ -29,6 +29,31 @@ impl<'a> Deserialize<'a> for PlayerState {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+pub struct ApiResults {
+    #[serde(rename = "resultCount")]
+    pub result_count: u32,
+    pub results: Vec<ApiResult>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ApiResult {
+    #[serde(rename = "wrapperType")]
+    pub wrapper_type: String,
+    #[serde(rename = "artistName")]
+    pub artist_name: String,
+    #[serde(rename = "collectionName")]
+    pub album_name: String,
+    #[serde(rename = "artworkUrl100")]
+    pub artwork_url: String,
+    #[serde(rename = "collectionViewUrl")]
+    pub album_url: String,
+    #[serde(rename = "artistViewUrl")]
+    pub artist_url: Option<String>,
+    #[serde(rename = "trackViewUrl")]
+    pub song_url: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Song {
     pub id: u32,
     pub name: String,
@@ -43,16 +68,18 @@ pub struct Song {
 }
 
 #[derive(Debug)]
-pub struct Album {
+pub struct SongDetails {
     pub artwork: String,
-    pub url: String,
+    pub album_url: String,
+    pub song_url: String,
 }
 
-impl Album {
-    pub fn new(artwork: String, url: String) -> Self {
+impl SongDetails {
+    pub fn new(artwork: String, album_url: String, song_url: String) -> Self {
         Self {
             artwork: artwork.replace('"', ""),
-            url: url.replace('"', ""),
+            album_url: album_url.replace('"', ""),
+            song_url: song_url.replace('"', ""),
         }
     }
 }

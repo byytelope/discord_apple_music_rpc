@@ -9,7 +9,7 @@ const DISCORD_APP_ID: &str = "996864734957670452";
 
 use crate::{
     models::PlayerState,
-    osascript::{get_album, get_current_song, get_is_open, get_player_state},
+    osascript::{get_current_song, get_details, get_is_open, get_player_state},
     setup::setup_logging,
     utils::{current_time_as_u64, macos_ver, truncate},
 };
@@ -77,12 +77,13 @@ async fn main() {
                 if let Some(current_song) = get_current_song(app_name) {
                     log::info!("Currently playing: {:#?}", current_song);
 
-                    let album_info = get_album(&current_song).await.unwrap();
-                    log::info!("Album info: {:#?}", album_info);
+                    let song_details = get_details(&current_song).await.unwrap();
+                    log::info!("Song details: {:#?}", song_details);
 
-                    client
+                    let payload = client
                         .set_activity(|act| {
                             act.state(truncate(&current_song.artist, 128))
+                                ._type(discord_presence::models::ActivityType::Listening)
                                 .details(truncate(&current_song.name, 128))
                                 .timestamps(|stamp| {
                                     stamp.start(
@@ -91,12 +92,14 @@ async fn main() {
                                 })
                                 .assets(|ass| {
                                     ass.small_image("apple_music_logo")
-                                        .large_image(&album_info.artwork)
+                                        .large_image(&song_details.artwork)
                                         .large_text(truncate(&current_song.album, 128))
                                 })
                                 .append_buttons(|butt| {
-                                    let url = if !album_info.url.is_empty() {
-                                        &album_info.url
+                                    let url = if !song_details.song_url.is_empty() {
+                                        &song_details.song_url
+                                    } else if !song_details.album_url.is_empty() {
+                                        &song_details.album_url
                                     } else {
                                         "https://music.apple.com/"
                                     };
@@ -108,6 +111,7 @@ async fn main() {
                             log::error!("{}", err);
                         })
                         .unwrap();
+                    log::info!("{:?}", payload);
                 } else {
                     continue 'player;
                 }

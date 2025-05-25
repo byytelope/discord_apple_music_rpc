@@ -14,4 +14,4 @@ http-cache-surf = { version = "0.14", features = ["manager-moka"] }
 fern = "0.7"
 log = "0.4"
 humantime = "2.2"
-discord-presence = "1.6"
+discord-presence = { version = "1.6", features = ["activity_type"] }
