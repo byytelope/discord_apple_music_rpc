@@ -1,4 +1,8 @@
-# PipeBoom `🍎 | 🔥`
+<p align="center">
+  <img src="https://raw.githubusercontent.com/byytelope/pipeboom/refs/heads/main/assets/logo.png" alt="PipeBoom Logo" width="150">
+</p>
+
+<h1 align="center">PipeBoom 🍎|🔥</h1>
 
 Automatically sync your Apple Music listening activity to Discord's Rich Presence, showing your friends what you're currently jamming to.
 
