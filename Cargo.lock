@@ -609,23 +609,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "discord_apple_music_rpc"
-version = "0.1.0"
-dependencies = [
- "discord-presence",
- "fern",
- "http-cache-surf",
- "humantime",
- "log",
- "osascript",
- "percent-encoding",
- "serde",
- "serde_json",
- "surf",
- "tokio",
-]
-
-[[package]]
 name = "displaydoc"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1658,6 +1641,23 @@ name = "pin-utils"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
+
+[[package]]
+name = "pipeboom"
+version = "2.0.0"
+dependencies = [
+ "discord-presence",
+ "fern",
+ "http-cache-surf",
+ "humantime",
+ "log",
+ "osascript",
+ "percent-encoding",
+ "serde",
+ "serde_json",
+ "surf",
+ "tokio",
+]
 
 [[package]]
 name = "piper"

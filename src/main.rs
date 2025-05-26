@@ -4,13 +4,13 @@ mod discord_rpc;
 mod error;
 mod models;
 mod osascript;
-mod setup;
+mod logging;
 mod utils;
 
 use app::App;
 use config::Config;
 use error::{AppError, AppResult};
-use setup::setup_logging;
+use logging::setup_logging;
 
 #[tokio::main]
 async fn main() -> AppResult<()> {
