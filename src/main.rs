@@ -1,10 +1,10 @@
-pub mod app;
-pub mod config;
-pub mod core;
-pub mod integrations;
+mod app;
+mod config;
+mod core;
+mod integrations;
 
 use app::App;
-use config::Config;
+use config::settings::Config;
 use core::{
     error::{AppError, AppResult},
     logging::setup_logging,

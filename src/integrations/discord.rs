@@ -1,5 +1,5 @@
 use crate::core::{
-    error::AppResult,
+    error::{AppError, AppResult},
     models::{Song, SongDetails},
     utils::{current_time_as_u64, truncate},
 };
@@ -28,13 +28,26 @@ impl DiscordRpcClient {
         Self { client }
     }
 
+    fn is_connected(&self) -> bool {
+        discord_presence::Client::is_ready()
+    }
+
     pub fn connect(&mut self) -> AppResult<()> {
+        if self.is_connected() {
+            return Err(AppError::Discord(
+                "Discord client is already connected".into(),
+            ));
+        }
         self.client.start();
         self.client.block_until_event(Event::Ready)?;
         Ok(())
     }
 
     pub fn update_activity(&mut self, song: &Song, details: &SongDetails) -> AppResult<()> {
+        if !self.is_connected() {
+            return Err("Discord connection lost".into());
+        }
+
         let current_time = match current_time_as_u64() {
             Ok(time) => time,
             Err(e) => {
@@ -64,11 +77,24 @@ impl DiscordRpcClient {
                     butt.label("Listen on Apple Music").url(url)
                 })
         })?;
+
         Ok(())
     }
 
     pub fn clear_activity(&mut self) -> AppResult<()> {
-        self.client.clear_activity()?;
-        Ok(())
+        if !self.is_connected() {
+            return Ok(());
+        }
+
+        match self.client.clear_activity() {
+            Ok(_) => Ok(()),
+            Err(e) => {
+                if e.to_string().contains("Io Error") {
+                    Ok(())
+                } else {
+                    Err(e.into())
+                }
+            }
+        }
     }
 }

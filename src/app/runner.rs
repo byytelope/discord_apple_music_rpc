@@ -1,5 +1,5 @@
 use crate::{
-    config::Config,
+    config::settings::Config,
     core::{
         error::{AppError, AppResult},
         models::PlayerState,
@@ -88,6 +88,7 @@ impl App {
                 log::info!("Discord closed. Exiting player loop.");
                 break;
             }
+
             if !get_is_open(self.app_name)? {
                 log::info!(
                     "{} closed. Clearing activity and exiting player loop.",
