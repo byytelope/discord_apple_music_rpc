@@ -1,10 +1,15 @@
 use crate::{
     config::Config,
-    discord_rpc::DiscordRpcClient,
-    error::{AppError, AppResult},
-    models::PlayerState,
-    osascript::{get_current_song, get_details, get_is_open, get_player_state},
-    utils::macos_ver,
+    core::{
+        error::{AppError, AppResult},
+        models::PlayerState,
+        utils::macos_ver,
+    },
+    integrations::{
+        apple_music::{get_current_song, get_is_open, get_player_state},
+        discord::DiscordRpcClient,
+        itunes_api::get_details,
+    },
 };
 use std::thread;
 

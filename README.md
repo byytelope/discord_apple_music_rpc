@@ -85,7 +85,6 @@ The included `setup.sh` script provides several commands:
 ```bash
 ./setup.sh install    # Build and install as Launch Agent (default)
 ./setup.sh uninstall  # Remove the Launch Agent and binary
-./setup.sh status     # Check if the service is running
 ./setup.sh build      # Only build the binary
 ./setup.sh help       # Show help information
 ```

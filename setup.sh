@@ -108,17 +108,6 @@ load_launch_agent() {
   fi
 }
 
-check_status() {
-  log_info "Checking Launch Agent status..."
-
-  if launchctl list | grep -q "${SERVICE_NAME}"; then
-    log_info "Launch Agent is running"
-    launchctl list "${SERVICE_NAME}"
-  else
-    log_warn "Launch Agent is not running"
-  fi
-}
-
 uninstall() {
   log_info "Uninstalling Launch Agent..."
 
@@ -145,15 +134,8 @@ show_help() {
   echo "Commands:"
   echo "  install     Build and install the Launch Agent (default)"
   echo "  uninstall   Remove the Launch Agent and binary"
-  echo "  status      Check the status of the Launch Agent"
   echo "  build       Only build the binary"
   echo "  help        Show this help message"
-  echo ""
-  echo "Configuration:"
-  echo "  Edit the variables at the top of this script to customize:"
-  echo "  - BINARY_NAME: Name of your Rust binary"
-  echo "  - SERVICE_NAME: Launch Agent service identifier"
-  echo "  - INSTALL_DIR: Where to install the binary"
 }
 
 main() {
@@ -172,9 +154,6 @@ main() {
     ;;
   "uninstall")
     uninstall
-    ;;
-  "status")
-    check_status
     ;;
   "build")
     check_rust_project

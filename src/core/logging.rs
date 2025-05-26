@@ -1,6 +1,6 @@
 use std::{fs, time::SystemTime};
 
-use crate::error::{AppError, AppResult};
+use crate::core::error::{AppError, AppResult};
 
 pub fn setup_logging(verbosity: log::LevelFilter, max_log_size: u64) -> AppResult<()> {
     let home_dir = std::env::var("HOME")

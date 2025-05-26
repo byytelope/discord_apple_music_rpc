@@ -1,16 +1,14 @@
-mod app;
-mod config;
-mod discord_rpc;
-mod error;
-mod models;
-mod osascript;
-mod logging;
-mod utils;
+pub mod app;
+pub mod config;
+pub mod core;
+pub mod integrations;
 
 use app::App;
 use config::Config;
-use error::{AppError, AppResult};
-use logging::setup_logging;
+use core::{
+    error::{AppError, AppResult},
+    logging::setup_logging,
+};
 
 #[tokio::main]
 async fn main() -> AppResult<()> {

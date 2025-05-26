@@ -7,7 +7,7 @@ use std::{
 
 use percent_encoding::{AsciiSet, CONTROLS};
 
-use crate::error::{AppError, AppResult};
+use crate::core::error::{AppError, AppResult};
 
 pub fn truncate(text: &str, max_length: usize) -> &str {
     match text.char_indices().nth(max_length) {

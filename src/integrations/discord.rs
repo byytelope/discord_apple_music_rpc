@@ -1,6 +1,8 @@
-use crate::error::AppResult;
-use crate::models::{Song, SongDetails};
-use crate::utils::{current_time_as_u64, truncate};
+use crate::core::{
+    error::AppResult,
+    models::{Song, SongDetails},
+    utils::{current_time_as_u64, truncate},
+};
 use discord_presence::{Client, Event};
 
 pub struct DiscordRpcClient {
