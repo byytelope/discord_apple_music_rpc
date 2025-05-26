@@ -4,7 +4,27 @@
 
 <h1 align="center">PipeBoom 🎵|💥</h1>
 
-Automatically sync your Apple Music listening activity to Discord's Rich Presence, showing your friends what you're currently jamming to.
+<p align="center">Automatically sync your Apple Music listening activity to Discord's Rich Presence, showing your friends what you're currently jamming to.</p>
+
+
+<!--toc:start-->
+- [Features](#features)
+- [Requirements](#requirements)
+- [Quick Start](#quick-start)
+  - [Automated Installation](#automated-installation)
+  - [Manual Installation](#manual-installation)
+- [Setup Script Usage](#setup-script-usage)
+- [How It Works](#how-it-works)
+- [Troubleshooting](#troubleshooting)
+  - [Checking Logs](#checking-logs)
+  - [Common Issues](#common-issues)
+  - [Manual Service Management](#manual-service-management)
+- [Development](#development)
+  - [Building](#building)
+  - [Dependencies](#dependencies)
+- [Contributing](#contributing)
+- [License](#license)
+<!--toc:end-->
 
 ## Features
 
