@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/byytelope/pipeboom/refs/heads/main/assets/logo.png" alt="PipeBoom Logo" width="150">
+  <img src="https://raw.githubusercontent.com/byytelope/pipeboom/refs/heads/main/assets/logo.png" alt="PipeBoom Logo" width="300">
 </p>
 
 <h1 align="center">PipeBoom 🍎|🔥</h1>
