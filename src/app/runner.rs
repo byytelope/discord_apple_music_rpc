@@ -11,7 +11,7 @@ use crate::{
         itunes_api::get_details,
     },
 };
-use std::thread;
+use tokio::time::sleep;
 
 pub struct App {
     discord_client: Option<DiscordRpcClient>,
@@ -46,14 +46,32 @@ impl App {
 
         loop {
             self.wait_for_applications().await?;
-            self.initialize_discord_client()?;
-            self.run_player_loop().await?;
+            self.discord_client = None;
+
+            if let Err(e) = self.initialize_discord_client() {
+                log::warn!("Failed to initialize Discord client: {}", e);
+                continue;
+            }
+
+            if let Err(e) = self.run_player_loop().await {
+                log::warn!("Player loop error: {}", e);
+            }
+
+            if let Some(client) = self.discord_client.as_mut() {
+                if client.is_connected {
+                    if let Err(e) = client.close() {
+                        log::warn!("Error closing Discord client: {}", e);
+                    }
+                }
+            }
+
+            log::info!("Restarting connection cycle...");
         }
     }
 
     async fn wait_for_applications(&self) -> AppResult<()> {
         loop {
-            thread::sleep(self.config.poll_interval);
+            sleep(self.config.poll_interval).await;
             let discord_is_open = get_is_open("Discord")?;
             let music_app_is_open = get_is_open(self.app_name)?;
 
@@ -65,8 +83,7 @@ impl App {
     }
 
     fn initialize_discord_client(&mut self) -> AppResult<()> {
-        let client_id = self.config.discord_app_id.parse::<u64>()?;
-        let mut discord_client = DiscordRpcClient::new(client_id);
+        let mut discord_client = DiscordRpcClient::new(self.config.discord_app_id);
         discord_client.connect()?;
 
         self.discord_client = Some(discord_client);
@@ -82,7 +99,7 @@ impl App {
         })?;
 
         loop {
-            thread::sleep(self.config.poll_interval);
+            sleep(self.config.poll_interval).await;
 
             if !get_is_open("Discord")? {
                 log::info!("Discord closed. Exiting player loop.");
@@ -94,7 +111,10 @@ impl App {
                     "{} closed. Clearing activity and exiting player loop.",
                     self.app_name
                 );
-                discord_client.clear_activity()?;
+                if let Err(e) = discord_client.clear_activity() {
+                    log::warn!("Failed to clear Discord activity: {}", e);
+                    break;
+                }
                 break;
             }
 
@@ -106,17 +126,26 @@ impl App {
                         let details = get_details(&song).await?;
                         log::info!("Song details: {:#?}", details);
 
-                        discord_client.update_activity(&song, &details)?;
+                        if let Err(e) = discord_client.update_activity(&song, &details) {
+                            log::warn!("Failed to update Discord activity: {}", e);
+                            break;
+                        }
                     } else {
                         log::debug!(
                             "Player state is Playing, but no current song information available. Clearing activity."
                         );
-                        discord_client.clear_activity()?;
+                        if let Err(e) = discord_client.clear_activity() {
+                            log::warn!("Failed to clear Discord activity: {}", e);
+                            break;
+                        }
                     }
                 }
                 _ => {
                     log::debug!("Player state is not Playing. Clearing activity.");
-                    discord_client.clear_activity()?;
+                    if let Err(e) = discord_client.clear_activity() {
+                        log::warn!("Failed to clear Discord activity: {}", e);
+                        break;
+                    }
                 }
             }
         }
