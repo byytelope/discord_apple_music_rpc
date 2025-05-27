@@ -146,7 +146,6 @@ main() {
     install_binary
     create_plist
     load_launch_agent
-    check_status
     log_info "Installation completed!"
     log_info "Logs will be available at:"
     log_info "  Stdout: ${HOME}/Library/Logs/${BINARY_NAME}.log"
