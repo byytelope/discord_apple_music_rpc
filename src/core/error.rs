@@ -1,5 +1,7 @@
 use std::fmt;
 
+pub type AppResult<T> = std::result::Result<T, AppError>;
+
 #[derive(Debug)]
 pub enum AppError {
     Discord(String),
@@ -9,6 +11,7 @@ pub enum AppError {
     Io(String),
     Network(String),
     Internal(String),
+    Timeout(String),
 }
 
 impl fmt::Display for AppError {
@@ -21,35 +24,38 @@ impl fmt::Display for AppError {
             AppError::Io(msg) => write!(f, "IO error: {}", msg),
             AppError::Network(msg) => write!(f, "Network error: {}", msg),
             AppError::Internal(msg) => write!(f, "Internal error: {}", msg),
+            AppError::Timeout(msg) => write!(f, "Operation timed out: {}", msg),
         }
     }
 }
 
 impl std::error::Error for AppError {}
 
-impl From<std::num::ParseIntError> for AppError {
-    fn from(err: std::num::ParseIntError) -> Self {
-        AppError::Parse(err.to_string())
-    }
+macro_rules! impl_from_error {
+    ($error_type:ty => $variant:ident) => {
+        impl From<$error_type> for AppError {
+            fn from(err: $error_type) -> Self {
+                AppError::$variant(err.to_string())
+            }
+        }
+    };
+    ($error_type:ty => $variant:ident, $format:expr) => {
+        impl From<$error_type> for AppError {
+            fn from(err: $error_type) -> Self {
+                AppError::$variant(format!($format, err))
+            }
+        }
+    };
 }
 
-impl From<std::num::ParseFloatError> for AppError {
-    fn from(err: std::num::ParseFloatError) -> Self {
-        AppError::Parse(err.to_string())
-    }
-}
-
-impl From<std::io::Error> for AppError {
-    fn from(err: std::io::Error) -> Self {
-        AppError::Io(err.to_string())
-    }
-}
-
-impl From<Box<dyn std::error::Error>> for AppError {
-    fn from(err: Box<dyn std::error::Error>) -> Self {
-        AppError::Config(err.to_string())
-    }
-}
+impl_from_error!(std::num::ParseIntError => Parse);
+impl_from_error!(std::num::ParseFloatError => Parse);
+impl_from_error!(std::io::Error => Io);
+impl_from_error!(serde_json::Error => Parse);
+impl_from_error!(surf::Error => Network);
+impl_from_error!(discord_rich_presence::error::Error => Discord);
+impl_from_error!(Box<dyn std::error::Error> => Internal);
+impl_from_error!(std::time::SystemTimeError => Internal, "System time error: {}");
 
 impl From<&str> for AppError {
     fn from(err: &str) -> Self {
@@ -62,29 +68,3 @@ impl From<String> for AppError {
         AppError::Internal(err)
     }
 }
-
-impl From<serde_json::Error> for AppError {
-    fn from(err: serde_json::Error) -> Self {
-        AppError::Parse(err.to_string())
-    }
-}
-
-impl From<surf::Error> for AppError {
-    fn from(err: surf::Error) -> Self {
-        AppError::Network(err.to_string())
-    }
-}
-
-impl From<std::time::SystemTimeError> for AppError {
-    fn from(err: std::time::SystemTimeError) -> Self {
-        AppError::Internal(format!("System time error: {}", err))
-    }
-}
-
-impl From<discord_presence::error::DiscordError> for AppError {
-    fn from(err: discord_presence::error::DiscordError) -> Self {
-        AppError::Discord(err.to_string())
-    }
-}
-
-pub type AppResult<T> = std::result::Result<T, AppError>;
