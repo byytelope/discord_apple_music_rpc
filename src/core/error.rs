@@ -11,7 +11,6 @@ pub enum AppError {
     Io(String),
     Network(String),
     Internal(String),
-    Timeout(String),
 }
 
 impl fmt::Display for AppError {
@@ -24,7 +23,6 @@ impl fmt::Display for AppError {
             AppError::Io(msg) => write!(f, "IO error: {}", msg),
             AppError::Network(msg) => write!(f, "Network error: {}", msg),
             AppError::Internal(msg) => write!(f, "Internal error: {}", msg),
-            AppError::Timeout(msg) => write!(f, "Operation timed out: {}", msg),
         }
     }
 }

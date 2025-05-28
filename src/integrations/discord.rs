@@ -74,16 +74,22 @@ impl DiscordRpcClient {
             .large_image(&details.artwork)
             .large_text(truncate(&song.album, 128));
 
-        let buttons = vec![Button::new(
-            "Listen on Apple Music",
-            if !details.song_url.is_empty() {
-                &details.song_url
-            } else if !details.album_url.is_empty() {
-                &details.album_url
-            } else {
-                "https://music.apple.com/"
-            },
-        )];
+        let buttons = vec![
+            Button::new(
+                "Listen on Apple Music",
+                if !details.song_url.is_empty() {
+                    &details.song_url
+                } else if !details.album_url.is_empty() {
+                    &details.album_url
+                } else {
+                    "https://music.apple.com/"
+                },
+            ),
+            Button::new(
+                "Share your AM status too!",
+                "https://shadhaan.me/api/projects/pipeboom",
+            ),
+        ];
 
         let activity = Activity::new()
             .state(truncate(&song.artist, 128))
