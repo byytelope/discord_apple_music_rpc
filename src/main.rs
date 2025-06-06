@@ -24,9 +24,6 @@ async fn main() -> AppResult<()> {
     })?;
 
     if args.len() == 1 {
-        log::info!("Starting Pipeboom v{}", env!("CARGO_PKG_VERSION"));
-        log::info!("Configuration: {:?}", config);
-
         let mut app = App::default();
 
         match app.run(config).await {
@@ -54,7 +51,7 @@ async fn main() -> AppResult<()> {
             }
         };
 
-        send_command(std::env::temp_dir().join("pipeboom.sock"), command).await?;
+        send_command(config.socket_path, command).await?;
 
         Ok(())
     }
