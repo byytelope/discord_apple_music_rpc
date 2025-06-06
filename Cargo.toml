@@ -2,6 +2,15 @@
 name = "pipeboom"
 version = "2.1.0"
 edition = "2024"
+default-run = "pipeboom"
+
+[[bin]]
+name = "pipeboom"
+path = "src/main.rs"
+
+[[bin]]
+name = "pipeboom-cli"
+path = "src/bin/pipeboom_cli.rs"
 
 [dependencies]
 osascript = "0.3.0"
@@ -14,5 +23,5 @@ http-cache-surf = { version = "0.14", features = ["manager-moka"] }
 fern = "0.7"
 log = "0.4"
 humantime = "2.2"
-# discord-rich-presence = "0.2.5"
 discord-rich-presence = { git = "https://github.com/vionya/discord-rich-presence" }
+tokio-stream = { version = "0.1", features = ["full"] }

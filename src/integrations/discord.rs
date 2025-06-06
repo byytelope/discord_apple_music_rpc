@@ -66,7 +66,7 @@ impl DiscordRpcClient {
         let timestamps = Timestamps::new().start(
             (current_time - song.player_position as u64)
                 .try_into()
-                .unwrap(),
+                .unwrap_or(0),
         );
 
         let assets = Assets::new()

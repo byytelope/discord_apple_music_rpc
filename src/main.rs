@@ -2,6 +2,7 @@ mod app;
 mod config;
 mod core;
 mod integrations;
+mod ipc;
 
 use app::App;
 use config::settings::Config;
@@ -22,9 +23,9 @@ async fn main() -> AppResult<()> {
     log::info!("Starting Pipeboom v{}", env!("CARGO_PKG_VERSION"));
     log::info!("Configuration: {:?}", config);
 
-    let mut app = App::new(config);
+    let mut app = App::default();
 
-    match app.run().await {
+    match app.run(config).await {
         Ok(_) => {
             log::info!("Pipeboom shut down successfully");
             Ok(())

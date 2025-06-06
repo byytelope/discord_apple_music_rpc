@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Config {
     pub discord_app_id: &'static str,
     pub poll_interval: Duration,

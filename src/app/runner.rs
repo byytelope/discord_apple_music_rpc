@@ -1,26 +1,28 @@
 use crate::{
+    app::controller::{Control, Controller},
     config::settings::Config,
-    core::{
-        error::{AppError, AppResult},
-        models::PlayerState,
-        utils::macos_ver,
-    },
-    integrations::{
-        apple_music::{get_current_song, get_is_open, get_player_state},
-        discord::DiscordRpcClient,
-        itunes_api::get_details,
+    core::{error::AppResult, models::PlayerState, utils::macos_ver},
+    integrations::apple_music::{get_current_song, get_is_open, get_player_state},
+    ipc::{
+        commands::{IpcCommand, IpcResponse},
+        server::IpcServer,
     },
 };
-use tokio::time::sleep;
+use tokio::sync::{mpsc, oneshot};
 
 pub struct App {
-    discord_client: Option<DiscordRpcClient>,
     app_name: &'static str,
-    config: Config,
+    player_control_tx: Option<mpsc::UnboundedSender<Control>>,
+}
+
+impl Default for App {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl App {
-    pub fn new(config: Config) -> Self {
+    pub fn new() -> Self {
         let app_name = match macos_ver() {
             Ok(ver) if ver >= 10.15 => "Music",
             Ok(_) => "iTunes",
@@ -34,122 +36,140 @@ impl App {
         };
 
         Self {
-            discord_client: None,
             app_name,
-            config,
+            player_control_tx: None,
         }
     }
 
-    pub async fn run(&mut self) -> AppResult<()> {
-        log::info!("Starting RPC...");
-        log::info!("Waiting for Discord and {}...", self.app_name);
+    pub async fn run(&mut self, config: Config) -> AppResult<()> {
+        log::info!("Starting Pipeboom v{}", env!("CARGO_PKG_VERSION"));
+
+        let (mut ipc_server, mut request_rx) = IpcServer::new();
+
+        tokio::spawn(async move {
+            if let Err(e) = ipc_server.start().await {
+                log::error!("IPC server error: {}", e);
+            }
+        });
+
+        let (player_control_tx, player_control_rx) = mpsc::unbounded_channel();
+        self.player_control_tx = Some(player_control_tx);
+
+        let player_controller = Controller::new(self.app_name, config);
+        tokio::spawn(async move {
+            player_controller.run(player_control_rx).await;
+        });
+
+        log::info!("Pipeboom is ready for IPC commands");
 
         loop {
-            self.wait_for_applications().await?;
-            self.discord_client = None;
+            tokio::select! {
+                Some(request) = request_rx.recv() => {
+                    let response = match request.command {
+                        IpcCommand::Start => self.handle_start().await,
+                        IpcCommand::Stop => self.handle_stop().await,
+                        IpcCommand::CurrentSong => self.handle_get_current_song().await,
+                        IpcCommand::Status => self.handle_get_status().await,
+                        IpcCommand::Shutdown => {
+                            log::info!("Received shutdown command via IPC");
+                            if request.response_tx.send(IpcResponse::Success).is_err() {
+                                log::warn!("Failed to send shutdown response");
+                            }
+                            break;
+                        }
+                    };
 
-            if let Err(e) = self.initialize_discord_client() {
-                log::warn!("Failed to initialize Discord client: {}", e);
-                continue;
-            }
-
-            if let Err(e) = self.run_player_loop().await {
-                log::warn!("Player loop error: {}", e);
-            }
-
-            if let Some(client) = self.discord_client.as_mut() {
-                if client.is_connected {
-                    if let Err(e) = client.close() {
-                        log::warn!("Error closing Discord client: {}", e);
+                    if !matches!(request.command, IpcCommand::Shutdown) && request.response_tx.send(response).is_err() {
+                        log::warn!("Failed to send IPC response - client may have disconnected");
                     }
                 }
             }
-
-            log::info!("Restarting connection cycle...");
         }
-    }
 
-    async fn wait_for_applications(&self) -> AppResult<()> {
-        loop {
-            sleep(self.config.poll_interval).await;
-            let discord_is_open = get_is_open("Discord")?;
-            let music_app_is_open = get_is_open(self.app_name)?;
-
-            if discord_is_open && music_app_is_open {
-                break;
-            }
+        if let Some(tx) = &self.player_control_tx {
+            let _ = tx.send(Control::Shutdown);
         }
+
+        log::info!("Pipeboom shutting down");
         Ok(())
     }
 
-    fn initialize_discord_client(&mut self) -> AppResult<()> {
-        let mut discord_client = DiscordRpcClient::new(self.config.discord_app_id);
-        discord_client.connect()?;
+    async fn handle_start(&mut self) -> IpcResponse {
+        log::info!("Received start command via IPC");
 
-        self.discord_client = Some(discord_client);
-        Ok(())
-    }
-
-    async fn run_player_loop(&mut self) -> AppResult<()> {
-        let discord_client = self.discord_client.as_mut().ok_or_else(|| {
-            AppError::Internal(
-                "Discord client not initialized in player loop. This should not happen."
-                    .to_string(),
-            )
-        })?;
-
-        loop {
-            sleep(self.config.poll_interval).await;
-
-            if !get_is_open("Discord")? {
-                log::info!("Discord closed. Exiting player loop.");
-                break;
-            }
-
-            if !get_is_open(self.app_name)? {
-                log::info!(
-                    "{} closed. Clearing activity and exiting player loop.",
-                    self.app_name
+        if let Some(tx) = &self.player_control_tx {
+            if tx.send(Control::Start).is_err() {
+                return IpcResponse::Error(
+                    "Failed to send start command to player controller".to_string(),
                 );
-                if let Err(e) = discord_client.clear_activity() {
-                    log::warn!("Failed to clear Discord activity: {}", e);
-                    break;
-                }
-                break;
             }
-
-            match get_player_state(self.app_name)? {
-                PlayerState::Playing => {
-                    if let Some(song) = get_current_song(self.app_name)? {
-                        log::info!("Currently playing: {:#?}", song);
-
-                        let details = get_details(&song).await?;
-                        log::info!("Song details: {:#?}", details);
-
-                        if let Err(e) = discord_client.update_activity(&song, &details) {
-                            log::warn!("Failed to update Discord activity: {}", e);
-                            break;
-                        }
-                    } else {
-                        log::debug!(
-                            "Player state is Playing, but no current song information available. Clearing activity."
-                        );
-                        if let Err(e) = discord_client.clear_activity() {
-                            log::warn!("Failed to clear Discord activity: {}", e);
-                            break;
-                        }
-                    }
-                }
-                _ => {
-                    log::debug!("Player state is not Playing. Clearing activity.");
-                    if let Err(e) = discord_client.clear_activity() {
-                        log::warn!("Failed to clear Discord activity: {}", e);
-                        break;
-                    }
-                }
-            }
+        } else {
+            return IpcResponse::Error("Player controller not available".to_string());
         }
 
-        Ok(())
+        IpcResponse::Success
+    }
+
+    async fn handle_stop(&mut self) -> IpcResponse {
+        log::info!("Received stop command via IPC");
+
+        if let Some(tx) = &self.player_control_tx {
+            if tx.send(Control::Stop).is_err() {
+                return IpcResponse::Error(
+                    "Failed to send stop command to player controller".to_string(),
+                );
+            }
+        } else {
+            return IpcResponse::Error("Player controller not available".to_string());
+        }
+
+        IpcResponse::Success
+    }
+
+    async fn handle_get_current_song(&self) -> IpcResponse {
+        match get_current_song(self.app_name) {
+            Ok(song_opt) => {
+                if let Some(song) = song_opt {
+                    let state = get_player_state(self.app_name).unwrap_or(PlayerState::Unknown);
+                    IpcResponse::CurrentSong {
+                        title: Some(song.name),
+                        artist: Some(song.artist),
+                        album: Some(song.album),
+                        state,
+                    }
+                } else {
+                    IpcResponse::CurrentSong {
+                        title: None,
+                        artist: None,
+                        album: None,
+                        state: PlayerState::Stopped,
+                    }
+                }
+            }
+            Err(e) => IpcResponse::Error(format!("Failed to get current song: {}", e)),
+        }
+    }
+
+    async fn handle_get_status(&self) -> IpcResponse {
+        let discord_open = get_is_open("Discord").unwrap_or(false);
+        let music_open = get_is_open(self.app_name).unwrap_or(false);
+
+        let running = if let Some(tx) = &self.player_control_tx {
+            let (status_tx, status_rx) = oneshot::channel();
+            if tx.send(Control::GetStatus(status_tx)).is_ok() {
+                status_rx.await.unwrap_or(false)
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+
+        IpcResponse::Status {
+            running,
+            discord_connected: discord_open,
+            discord_open,
+            music_app_open: music_open,
+        }
     }
 }

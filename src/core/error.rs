@@ -11,6 +11,7 @@ pub enum AppError {
     Io(String),
     Network(String),
     Internal(String),
+    Ipc(String),
 }
 
 impl fmt::Display for AppError {
@@ -23,7 +24,19 @@ impl fmt::Display for AppError {
             AppError::Io(msg) => write!(f, "IO error: {}", msg),
             AppError::Network(msg) => write!(f, "Network error: {}", msg),
             AppError::Internal(msg) => write!(f, "Internal error: {}", msg),
+            AppError::Ipc(msg) => {
+                write!(f, "IPC error: {}", msg)
+            }
         }
+    }
+}
+
+impl AppError {
+    pub fn is_recoverable(&self) -> bool {
+        matches!(
+            self,
+            AppError::Discord(_) | AppError::AppleMusic(_) | AppError::Network(_)
+        )
     }
 }
 
