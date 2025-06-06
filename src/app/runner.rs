@@ -4,7 +4,7 @@ use crate::{
     core::{error::AppResult, models::PlayerState, utils::macos_ver},
     integrations::apple_music::{get_current_song, get_is_open, get_player_state},
     ipc::{
-        commands::{IpcCommand, IpcResponse},
+        commands::{IpcCommand, IpcResponse, send_command},
         server::IpcServer,
     },
 };
@@ -61,6 +61,11 @@ impl App {
         });
 
         log::info!("Pipeboom is ready for IPC commands");
+        send_command(
+            std::env::temp_dir().join("pipeboom.sock"),
+            IpcCommand::Start,
+        )
+        .await?;
 
         loop {
             tokio::select! {

@@ -2,9 +2,8 @@
 
 set -e
 
-BINARY_NAME="pipeboom"
-SERVICE_NAME="me.shadhaan.${BINARY_NAME}"
-INSTALL_DIR="$HOME/bin"
+SERVICE_NAME="me.shadhaan.pipeboom"
+INSTALL_DIR="$HOME/.local/bin"
 PLIST_DIR="$HOME/Library/LaunchAgents"
 PLIST_FILE="${PLIST_DIR}/${SERVICE_NAME}.plist"
 
@@ -36,9 +35,8 @@ build_binary() {
   log_info "Building Rust binary in release mode..."
   cargo build --release
 
-  if [ ! -f "target/release/${BINARY_NAME}" ]; then
-    log_error "Binary 'target/release/${BINARY_NAME}' not found after build."
-    log_error "Make sure BINARY_NAME matches your binary name in Cargo.toml"
+  if [ ! -f "target/release/pipeboom" ]; then
+    log_error "Binary 'target/release/pipeboom"
     exit 1
   fi
 
@@ -50,10 +48,10 @@ install_binary() {
 
   mkdir -p "${INSTALL_DIR}"
 
-  cp "target/release/${BINARY_NAME}" "${INSTALL_DIR}/"
-  chmod +x "${INSTALL_DIR}/${BINARY_NAME}"
+  cp "target/release/pipeboom" "${INSTALL_DIR}/"
+  chmod +x "${INSTALL_DIR}/pipeboom"
 
-  log_info "Binary installed to ${INSTALL_DIR}/${BINARY_NAME}"
+  log_info "Binary installed to ${INSTALL_DIR}/pipeboom"
 }
 
 create_plist() {
@@ -71,7 +69,7 @@ create_plist() {
     
     <key>ProgramArguments</key>
     <array>
-        <string>${INSTALL_DIR}/${BINARY_NAME}</string>
+        <string>${INSTALL_DIR}/pipeboom</string>
     </array>
     
     <key>RunAtLoad</key>
@@ -81,10 +79,10 @@ create_plist() {
     <true/>
     
     <key>StandardOutPath</key>
-    <string>${HOME}/Library/Logs/${BINARY_NAME}.log</string>
+    <string>${HOME}/Library/Logs/pipeboom.log</string>
     
     <key>StandardErrorPath</key>
-    <string>${HOME}/Library/Logs/${BINARY_NAME}.err</string>
+    <string>${HOME}/Library/Logs/pipeboom.err</string>
     
     <key>WorkingDirectory</key>
     <string>${HOME}</string>
@@ -120,8 +118,8 @@ uninstall() {
     log_info "Plist file removed"
   fi
 
-  if [ -f "${INSTALL_DIR}/${BINARY_NAME}" ]; then
-    rm "${INSTALL_DIR}/${BINARY_NAME}"
+  if [ -f "${INSTALL_DIR}/pipeboom" ]; then
+    rm "${INSTALL_DIR}/pipeboom"
     log_info "Binary removed"
   fi
 
@@ -148,8 +146,9 @@ main() {
     load_launch_agent
     log_info "Installation completed!"
     log_info "Logs will be available at:"
-    log_info "  Stdout: ${HOME}/Library/Logs/${BINARY_NAME}.log"
-    log_info "  Stderr: ${HOME}/Library/Logs/${BINARY_NAME}.err"
+    log_info "  Stdout: ${HOME}/Library/Logs/pipeboom.log"
+    log_info "  Stderr: ${HOME}/Library/Logs/pipeboom.err"
+    log_info "Make sure ${INSTALL_DIR} is in your path"
     ;;
   "uninstall")
     uninstall
