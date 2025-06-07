@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{fs, os::unix::fs::FileTypeExt, path::PathBuf};
 
 use crate::core::{
     error::{PipeBoomError, PipeBoomResult},
@@ -63,10 +63,11 @@ pub async fn send_command(socket_path: PathBuf, command: IpcCommand) -> PipeBoom
         )));
     }
 
-    if !socket_path.is_file() {
+    let socket_meta = fs::metadata(socket_path.clone())?;
+    if !socket_meta.file_type().is_socket() {
         return Err(PipeBoomError::Ipc(format!(
-            "Socket path is not a file: {:?}",
-            socket_path
+            "Socket path is not a valid socket: {:?}",
+            socket_path,
         )));
     }
 
