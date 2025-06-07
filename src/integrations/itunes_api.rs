@@ -4,6 +4,7 @@ use http_cache_surf::{CACacheManager, Cache, CacheMode, HttpCache, HttpCacheOpti
 use percent_encoding::utf8_percent_encode;
 
 use crate::core::{
+    constants::BUNDLE_ID,
     models::{ApiResults, Song, SongDetails},
     utils::FRAGMENT,
 };
@@ -21,8 +22,7 @@ pub async fn get_details(song_info: &Song) -> surf::Result<SongDetails> {
 
 fn get_http_client() -> &'static surf::Client {
     HTTP_CLIENT.get_or_init(|| {
-        let cache_dir = std::env::temp_dir().join("me.shadhaan.pipeboom");
-
+        let cache_dir = std::env::temp_dir().join(BUNDLE_ID);
         let cache_options = HttpCacheOptions {
             cache_options: Some(http_cache_surf::CacheOptions {
                 immutable_min_time_to_live: Duration::from_secs(604800), // 1 week
@@ -30,7 +30,6 @@ fn get_http_client() -> &'static surf::Client {
             }),
             ..Default::default()
         };
-
         let cache = Cache(HttpCache {
             mode: CacheMode::Default,
             manager: CACacheManager { path: cache_dir },
@@ -48,7 +47,6 @@ async fn search_song(song_info: &Song) -> surf::Result<Option<SongDetails>> {
         song_info.name,
         song_info.album
     );
-
     let results = search_itunes("song", &query).await?;
 
     if results.result_count > 0 {
@@ -66,7 +64,6 @@ async fn search_song(song_info: &Song) -> surf::Result<Option<SongDetails>> {
 async fn search_album(song_info: &Song) -> surf::Result<SongDetails> {
     let album_artist = get_primary_artist(song_info);
     let query = format!("{} {}", album_artist, song_info.album);
-
     let results = search_itunes("album", &query).await?;
 
     if results.result_count > 0 {
@@ -95,13 +92,12 @@ async fn search_itunes(entity: &str, query: &str) -> surf::Result<ApiResults> {
     let encoded_query = utf8_percent_encode(query, FRAGMENT)
         .collect::<String>()
         .replace('*', "");
-
     let url = format!(
         "https://itunes.apple.com/search?media=music&entity={}&limit=1&term={}",
         entity, encoded_query
     );
 
-    log::info!("Searching iTunes: {}", url);
+    log::debug!("Searching iTunes: {}", url);
 
     get_http_client()
         .recv_json::<ApiResults>(surf::get(url))

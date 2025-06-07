@@ -7,7 +7,7 @@ use std::{
 
 use percent_encoding::{AsciiSet, CONTROLS};
 
-use crate::core::error::{AppError, AppResult};
+use crate::core::error::{PipeBoomError, PipeBoomResult};
 
 pub fn truncate(text: &str, max_length: usize) -> &str {
     match text.char_indices().nth(max_length) {
@@ -16,14 +16,14 @@ pub fn truncate(text: &str, max_length: usize) -> &str {
     }
 }
 
-pub fn current_time_as_u64() -> AppResult<u64> {
+pub fn current_time_as_u64() -> PipeBoomResult<u64> {
     let start = SystemTime::now();
     let since_the_epoch = start.duration_since(UNIX_EPOCH)?;
 
     Ok(since_the_epoch.as_secs())
 }
 
-pub fn macos_ver() -> AppResult<f32> {
+pub fn macos_ver() -> PipeBoomResult<f32> {
     let output_result = Command::new("sh")
         .arg("-c")
         .arg("sw_vers | grep ProductVersion | awk '{print $2}'")
@@ -33,7 +33,10 @@ pub fn macos_ver() -> AppResult<f32> {
         Ok(o) => {
             if !o.status.success() {
                 let stderr = String::from_utf8_lossy(&o.stderr);
-                return Err(AppError::Io(format!("sw_vers command failed: {}", stderr)));
+                return Err(PipeBoomError::Io(format!(
+                    "sw_vers command failed: {}",
+                    stderr
+                )));
             }
             o.stdout
         }
@@ -44,7 +47,7 @@ pub fn macos_ver() -> AppResult<f32> {
     let ver_parts = ver_str.trim().split('.').collect::<Vec<&str>>();
 
     if ver_parts.len() < 2 {
-        return Err(AppError::Parse(format!(
+        return Err(PipeBoomError::Parse(format!(
             "Unexpected macOS version format: {}",
             ver_str.trim()
         )));

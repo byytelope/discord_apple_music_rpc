@@ -1,58 +1,65 @@
 mod app;
-mod config;
 mod core;
 mod integrations;
 mod ipc;
 
-use app::App;
-use config::settings::Config;
+use app::{
+    App,
+    cli::{Cli, CliCommand},
+    setup::{setup_launch_agent, uninstall_launch_agent},
+};
+use clap::Parser;
 use core::{
-    error::{AppError, AppResult},
+    error::{PipeBoomError, PipeBoomResult},
     logging::setup_logging,
 };
 use ipc::commands::{IpcCommand, send_command};
-use std::env;
 
 #[tokio::main]
-async fn main() -> AppResult<()> {
-    let args = env::args().collect::<Vec<String>>();
-    let config = Config::default();
+async fn main() -> PipeBoomResult<()> {
+    let cli = Cli::parse();
 
-    setup_logging(config.log_level, config.max_log_size).map_err(|e| {
+    let poll_interval = cli.poll_interval;
+    let log_level = cli.log_level;
+    let max_log_size = cli.max_log_size;
+    let socket_path = cli.socket_path;
+
+    setup_logging(log_level.into(), max_log_size).map_err(|e| {
         eprintln!("Failed to initialize logging: {}", e);
-        AppError::Config("Failed to initialize logging".to_string())
+        PipeBoomError::Config("Failed to initialize logging".to_string())
     })?;
 
-    if args.len() == 1 {
-        let mut app = App::default();
+    if let Some(command) = cli.command {
+        match command {
+            CliCommand::Setup => setup_launch_agent()?,
+            CliCommand::Uninstall => uninstall_launch_agent()?,
+            CliCommand::Service(ipc_command) => match ipc_command {
+                IpcCommand::Start
+                | IpcCommand::Stop
+                | IpcCommand::CurrentSong
+                | IpcCommand::Status
+                | IpcCommand::Shutdown => send_command(socket_path, ipc_command).await?,
+            },
+        }
 
-        match app.run(config).await {
+        Ok(())
+    } else {
+        let mut app = App::default();
+        log::info!("Starting PipeBoom v{}", env!("CARGO_PKG_VERSION"));
+        log::info!("Using IPC socket at {:?}", socket_path);
+        log::info!("Polling interval: {:?}", poll_interval);
+        log::info!("Log level: {:?}", log_level);
+        log::info!("Max log size: {}MB", max_log_size);
+
+        match app.run(poll_interval, socket_path).await {
             Ok(_) => {
-                log::info!("Pipeboom shut down successfully");
+                log::info!("PipeBoom shut down successfully");
                 Ok(())
             }
             Err(e) => {
-                log::error!("Pipeboom error: {}", e);
+                log::error!("PipeBoom error: {}", e);
                 Err(e)
             }
         }
-    } else {
-        let command = match args[1].as_str() {
-            "start" => IpcCommand::Start,
-            "stop" => IpcCommand::Stop,
-            "current-song" => IpcCommand::CurrentSong,
-            "status" => IpcCommand::Status,
-            "shutdown" => IpcCommand::Shutdown,
-            _ => {
-                eprintln!("Unknown command: {}", args[1]);
-                eprintln!("Usage: {} <command>", args[0]);
-                eprintln!("Commands: start, stop, current-song, status, shutdown");
-                return Ok(());
-            }
-        };
-
-        send_command(config.socket_path, command).await?;
-
-        Ok(())
     }
 }

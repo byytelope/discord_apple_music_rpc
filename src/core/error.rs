@@ -1,59 +1,72 @@
 use std::fmt;
 
-pub type AppResult<T> = std::result::Result<T, AppError>;
+pub type PipeBoomResult<T> = std::result::Result<T, PipeBoomError>;
 
 #[derive(Debug)]
-pub enum AppError {
+pub enum PipeBoomError {
+    /// Errors from Discord Rich Presence
     Discord(String),
+    /// Errors from the Osascript interface
     AppleMusic(String),
+    /// Errors in configuration
     Config(String),
+    /// Errors in parsing data
     Parse(String),
+    /// IO errors
     Io(String),
+    /// Network errors
     Network(String),
+    /// General internal errors
     Internal(String),
+    /// Errors in IPC implementation
     Ipc(String),
+    /// Errors during setup/uninstallation
+    Setup(String),
 }
 
-impl fmt::Display for AppError {
+impl fmt::Display for PipeBoomError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            AppError::Discord(msg) => write!(f, "Discord error: {}", msg),
-            AppError::AppleMusic(msg) => write!(f, "Apple Music error: {}", msg),
-            AppError::Config(msg) => write!(f, "Configuration error: {}", msg),
-            AppError::Parse(msg) => write!(f, "Parse error: {}", msg),
-            AppError::Io(msg) => write!(f, "IO error: {}", msg),
-            AppError::Network(msg) => write!(f, "Network error: {}", msg),
-            AppError::Internal(msg) => write!(f, "Internal error: {}", msg),
-            AppError::Ipc(msg) => {
+            PipeBoomError::Discord(msg) => write!(f, "Discord error: {}", msg),
+            PipeBoomError::AppleMusic(msg) => write!(f, "Apple Music error: {}", msg),
+            PipeBoomError::Config(msg) => write!(f, "Configuration error: {}", msg),
+            PipeBoomError::Parse(msg) => write!(f, "Parse error: {}", msg),
+            PipeBoomError::Io(msg) => write!(f, "IO error: {}", msg),
+            PipeBoomError::Network(msg) => write!(f, "Network error: {}", msg),
+            PipeBoomError::Internal(msg) => write!(f, "Internal error: {}", msg),
+            PipeBoomError::Ipc(msg) => {
                 write!(f, "IPC error: {}", msg)
+            }
+            PipeBoomError::Setup(msg) => {
+                write!(f, "Setup error: {}", msg)
             }
         }
     }
 }
 
-impl AppError {
+impl PipeBoomError {
     pub fn is_recoverable(&self) -> bool {
         matches!(
             self,
-            AppError::Discord(_) | AppError::AppleMusic(_) | AppError::Network(_)
+            PipeBoomError::Discord(_) | PipeBoomError::AppleMusic(_) | PipeBoomError::Network(_)
         )
     }
 }
 
-impl std::error::Error for AppError {}
+impl std::error::Error for PipeBoomError {}
 
 macro_rules! impl_from_error {
     ($error_type:ty => $variant:ident) => {
-        impl From<$error_type> for AppError {
+        impl From<$error_type> for PipeBoomError {
             fn from(err: $error_type) -> Self {
-                AppError::$variant(err.to_string())
+                PipeBoomError::$variant(err.to_string())
             }
         }
     };
     ($error_type:ty => $variant:ident, $format:expr) => {
-        impl From<$error_type> for AppError {
+        impl From<$error_type> for PipeBoomError {
             fn from(err: $error_type) -> Self {
-                AppError::$variant(format!($format, err))
+                PipeBoomError::$variant(format!($format, err))
             }
         }
     };
@@ -68,14 +81,14 @@ impl_from_error!(discord_rich_presence::error::Error => Discord);
 impl_from_error!(Box<dyn std::error::Error> => Internal);
 impl_from_error!(std::time::SystemTimeError => Internal, "System time error: {}");
 
-impl From<&str> for AppError {
+impl From<&str> for PipeBoomError {
     fn from(err: &str) -> Self {
-        AppError::Internal(err.to_string())
+        PipeBoomError::Internal(err.to_string())
     }
 }
 
-impl From<String> for AppError {
+impl From<String> for PipeBoomError {
     fn from(err: String) -> Self {
-        AppError::Internal(err)
+        PipeBoomError::Internal(err)
     }
 }

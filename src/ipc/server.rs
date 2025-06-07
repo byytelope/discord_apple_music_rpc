@@ -1,5 +1,6 @@
-use crate::core::error::{AppError, AppResult};
+use crate::core::error::{PipeBoomError, PipeBoomResult};
 use crate::ipc::commands::{IpcMessage, IpcRequest};
+use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
@@ -11,8 +12,7 @@ pub struct IpcServer {
 }
 
 impl IpcServer {
-    pub fn new() -> (Self, mpsc::UnboundedReceiver<IpcRequest>) {
-        let socket_path = std::env::temp_dir().join("pipeboom.sock");
+    pub fn new(socket_path: PathBuf) -> (Self, mpsc::UnboundedReceiver<IpcRequest>) {
         let (request_tx, request_rx) = mpsc::unbounded_channel();
 
         (
@@ -24,14 +24,19 @@ impl IpcServer {
         )
     }
 
-    pub async fn start(&mut self) -> AppResult<()> {
+    pub async fn start(&mut self) -> PipeBoomResult<()> {
         if self.socket_path.exists() {
-            std::fs::remove_file(&self.socket_path)
-                .map_err(|e| AppError::Ipc(format!("Failed to remove existing socket: {}", e)))?;
+            std::fs::remove_file(&self.socket_path).map_err(|e| {
+                PipeBoomError::Ipc(format!("Failed to remove existing socket: {}", e))
+            })?;
         }
 
         let listener = UnixListener::bind(&self.socket_path)
-            .map_err(|e| AppError::Ipc(format!("Failed to bind Unix socket: {}", e)))?;
+            .map_err(|e| PipeBoomError::Ipc(format!("Failed to bind Unix socket: {}", e)))?;
+
+        if let Err(e) = self.set_basic_permissions() {
+            log::warn!("Failed to set socket permissions: {}", e);
+        }
 
         log::info!("IPC server listening on {:?}", self.socket_path);
 
@@ -56,15 +61,16 @@ impl IpcServer {
     async fn handle_client(
         mut stream: UnixStream,
         request_tx: mpsc::UnboundedSender<IpcRequest>,
-    ) -> AppResult<()> {
+    ) -> PipeBoomResult<()> {
         let mut reader = BufReader::new(&mut stream);
         let mut line = String::new();
 
         match reader.read_line(&mut line).await {
             Ok(0) => return Ok(()),
             Ok(_) => {
-                let message = serde_json::from_str::<IpcMessage>(line.trim())
-                    .map_err(|e| AppError::Ipc(format!("Failed to parse IPC message: {}", e)))?;
+                let message = serde_json::from_str::<IpcMessage>(line.trim()).map_err(|e| {
+                    PipeBoomError::Ipc(format!("Failed to parse IPC message: {}", e))
+                })?;
 
                 let (response_tx, response_rx) = oneshot::channel();
 
@@ -75,30 +81,41 @@ impl IpcServer {
 
                 request_tx
                     .send(request)
-                    .map_err(|e| AppError::Ipc(format!("Failed to send request: {}", e)))?;
+                    .map_err(|e| PipeBoomError::Ipc(format!("Failed to send request: {}", e)))?;
 
-                let response = response_rx
-                    .await
-                    .map_err(|e| AppError::Ipc(format!("Failed to receive response: {}", e)))?;
+                let response = response_rx.await.map_err(|e| {
+                    PipeBoomError::Ipc(format!("Failed to receive response: {}", e))
+                })?;
 
-                let response_json = serde_json::to_string(&response)
-                    .map_err(|e| AppError::Ipc(format!("Failed to serialize response: {}", e)))?;
+                let response_json = serde_json::to_string(&response).map_err(|e| {
+                    PipeBoomError::Ipc(format!("Failed to serialize response: {}", e))
+                })?;
 
                 stream
                     .write_all(response_json.as_bytes())
                     .await
-                    .map_err(|e| AppError::Ipc(format!("Failed to write response: {}", e)))?;
+                    .map_err(|e| PipeBoomError::Ipc(format!("Failed to write response: {}", e)))?;
                 stream
                     .write_all(b"\n")
                     .await
-                    .map_err(|e| AppError::Ipc(format!("Failed to write newline: {}", e)))?;
+                    .map_err(|e| PipeBoomError::Ipc(format!("Failed to write newline: {}", e)))?;
             }
             Err(e) => {
-                return Err(AppError::Ipc(format!("Failed to read from client: {}", e)));
+                return Err(PipeBoomError::Ipc(format!(
+                    "Failed to read from client: {}",
+                    e
+                )));
             }
         }
 
         Ok(())
+    }
+
+    fn set_basic_permissions(&self) -> Result<(), std::io::Error> {
+        let metadata = std::fs::metadata(&self.socket_path)?;
+        let mut permissions = metadata.permissions();
+        permissions.set_mode(0o600); // Owner read/write only
+        std::fs::set_permissions(&self.socket_path, permissions)
     }
 }
 

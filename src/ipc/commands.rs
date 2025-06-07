@@ -1,6 +1,10 @@
 use std::path::PathBuf;
 
-use crate::core::models::PlayerState;
+use crate::core::{
+    error::{PipeBoomError, PipeBoomResult},
+    models::PlayerState,
+};
+use clap::Subcommand;
 use serde::{Deserialize, Serialize};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
@@ -8,12 +12,17 @@ use tokio::{
     sync::oneshot,
 };
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Subcommand, Debug, Serialize, Deserialize)]
 pub enum IpcCommand {
+    /// Start PipeBoom service
     Start,
+    /// Stop PipeBoom service
     Stop,
+    /// Get current song details
     CurrentSong,
+    /// Get current PipeBoom status
     Status,
+    /// Kill PipeBoom daemon
     Shutdown,
 }
 
@@ -46,11 +55,30 @@ pub struct IpcMessage {
     pub command: IpcCommand,
 }
 
-pub async fn send_command(
-    socket_path: PathBuf,
-    command: IpcCommand,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let mut stream = UnixStream::connect(socket_path).await?;
+pub async fn send_command(socket_path: PathBuf, command: IpcCommand) -> PipeBoomResult<()> {
+    if !socket_path.exists() {
+        return Err(PipeBoomError::Ipc(format!(
+            "Socket does not exist: {:?}",
+            socket_path
+        )));
+    }
+
+    if !socket_path.is_file() {
+        return Err(PipeBoomError::Ipc(format!(
+            "Socket path is not a file: {:?}",
+            socket_path
+        )));
+    }
+
+    let mut stream = match UnixStream::connect(&socket_path).await {
+        Ok(stream) => stream,
+        Err(e) => {
+            return Err(PipeBoomError::Ipc(format!(
+                "Failed to connect to IPC socket: {}",
+                e
+            )));
+        }
+    };
 
     let message = IpcMessage { command };
     let message_json = serde_json::to_string(&message)?;

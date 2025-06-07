@@ -4,19 +4,20 @@ use discord_rich_presence::{
 };
 
 use crate::core::{
-    error::{AppError, AppResult},
+    constants::DISCORD_APP_ID,
+    error::{PipeBoomError, PipeBoomResult},
     models::{Song, SongDetails},
     utils::{current_time_as_u64, truncate},
 };
 
-pub struct DiscordRpcClient {
+pub struct DiscordClient {
     client: DiscordIpcClient,
     pub is_connected: bool,
 }
 
-impl DiscordRpcClient {
-    pub fn new(client_id: &'static str) -> Self {
-        let client = DiscordIpcClient::new(client_id);
+impl DiscordClient {
+    pub fn new() -> Self {
+        let client = DiscordIpcClient::new(DISCORD_APP_ID);
 
         Self {
             client,
@@ -24,10 +25,10 @@ impl DiscordRpcClient {
         }
     }
 
-    pub fn connect(&mut self) -> AppResult<()> {
+    pub fn connect(&mut self) -> PipeBoomResult<()> {
         if self.is_connected {
-            return Err(AppError::Discord(
-                "Tried connecting to RPC with an existing connection".into(),
+            return Err(PipeBoomError::Discord(
+                "Tried connecting to Discord IPC with an existing connection".into(),
             ));
         }
 
@@ -36,13 +37,13 @@ impl DiscordRpcClient {
         Ok(())
     }
 
-    pub fn close(&mut self) -> AppResult<()> {
+    pub fn close(&mut self) -> PipeBoomResult<()> {
         if self.is_connected {
             let _ = self.clear_activity();
 
             match self.client.close() {
-                Ok(_) => log::debug!("Discord RPC connection closed successfully"),
-                Err(e) => log::warn!("Error closing Discord RPC connection: {}", e),
+                Ok(_) => log::debug!("Discord IPC connection closed successfully"),
+                Err(e) => log::warn!("Error closing Discord IPC connection: {}", e),
             }
         }
 
@@ -50,7 +51,7 @@ impl DiscordRpcClient {
         Ok(())
     }
 
-    pub fn update_activity(&mut self, song: &Song, details: &SongDetails) -> AppResult<()> {
+    pub fn update_activity(&mut self, song: &Song, details: &SongDetails) -> PipeBoomResult<()> {
         if !self.is_connected {
             return Ok(());
         }
@@ -101,20 +102,20 @@ impl DiscordRpcClient {
 
         if let Err(e) = self.client.set_activity(activity) {
             log::warn!("Failed to update Discord activity: {}", e);
-            return Err(AppError::Discord(e.to_string()));
+            return Err(PipeBoomError::Discord(e.to_string()));
         }
 
         Ok(())
     }
 
-    pub fn clear_activity(&mut self) -> AppResult<()> {
+    pub fn clear_activity(&mut self) -> PipeBoomResult<()> {
         if !self.is_connected {
             return Ok(());
         }
 
         if let Err(e) = self.client.clear_activity() {
             log::warn!("Failed to clear Discord activity: {}", e);
-            return Err(AppError::Discord(e.to_string()));
+            return Err(PipeBoomError::Discord(e.to_string()));
         }
 
         Ok(())

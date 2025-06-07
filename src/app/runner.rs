@@ -1,7 +1,8 @@
+use std::{path::PathBuf, time::Duration};
+
 use crate::{
     app::controller::{Control, Controller},
-    config::settings::Config,
-    core::{error::AppResult, models::PlayerState, utils::macos_ver},
+    core::{error::PipeBoomResult, models::PlayerState, utils::macos_ver},
     integrations::apple_music::{get_current_song, get_is_open, get_player_state},
     ipc::{
         commands::{IpcCommand, IpcResponse},
@@ -12,7 +13,7 @@ use tokio::sync::{mpsc, oneshot};
 
 pub struct App {
     app_name: &'static str,
-    player_control_tx: Option<mpsc::UnboundedSender<Control>>,
+    control_tx: Option<mpsc::UnboundedSender<Control>>,
 }
 
 impl Default for App {
@@ -37,14 +38,16 @@ impl App {
 
         Self {
             app_name,
-            player_control_tx: None,
+            control_tx: None,
         }
     }
 
-    pub async fn run(&mut self, config: Config) -> AppResult<()> {
-        log::info!("Starting Pipeboom v{}", env!("CARGO_PKG_VERSION"));
-
-        let (mut ipc_server, mut request_rx) = IpcServer::new();
+    pub async fn run(
+        &mut self,
+        poll_interval: Duration,
+        socket_path: PathBuf,
+    ) -> PipeBoomResult<()> {
+        let (mut ipc_server, mut request_rx) = IpcServer::new(socket_path);
 
         tokio::spawn(async move {
             if let Err(e) = ipc_server.start().await {
@@ -53,14 +56,14 @@ impl App {
         });
 
         let (player_control_tx, player_control_rx) = mpsc::unbounded_channel();
-        self.player_control_tx = Some(player_control_tx);
+        self.control_tx = Some(player_control_tx);
 
-        let player_controller = Controller::new(self.app_name, config);
+        let player_controller = Controller::new(self.app_name, poll_interval);
         tokio::spawn(async move {
             player_controller.run(player_control_rx).await;
         });
 
-        log::info!("Pipeboom is ready for IPC commands");
+        log::info!("PipeBoom is ready for IPC commands");
 
         let _ = self.handle_start().await;
 
@@ -88,18 +91,18 @@ impl App {
             }
         }
 
-        if let Some(tx) = &self.player_control_tx {
+        if let Some(tx) = &self.control_tx {
             let _ = tx.send(Control::Shutdown);
         }
 
-        log::info!("Pipeboom shutting down");
+        log::info!("PipeBoom shutting down");
         Ok(())
     }
 
     async fn handle_start(&mut self) -> IpcResponse {
         log::info!("Received start command via IPC");
 
-        if let Some(tx) = &self.player_control_tx {
+        if let Some(tx) = &self.control_tx {
             if tx.send(Control::Start).is_err() {
                 return IpcResponse::Error(
                     "Failed to send start command to player controller".to_string(),
@@ -115,7 +118,7 @@ impl App {
     async fn handle_stop(&mut self) -> IpcResponse {
         log::info!("Received stop command via IPC");
 
-        if let Some(tx) = &self.player_control_tx {
+        if let Some(tx) = &self.control_tx {
             if tx.send(Control::Stop).is_err() {
                 return IpcResponse::Error(
                     "Failed to send stop command to player controller".to_string(),
@@ -156,7 +159,7 @@ impl App {
         let discord_open = get_is_open("Discord").unwrap_or(false);
         let music_open = get_is_open(self.app_name).unwrap_or(false);
 
-        let running = if let Some(tx) = &self.player_control_tx {
+        let running = if let Some(tx) = &self.control_tx {
             let (status_tx, status_rx) = oneshot::channel();
             if tx.send(Control::GetStatus(status_tx)).is_ok() {
                 status_rx.await.unwrap_or(false)

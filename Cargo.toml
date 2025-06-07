@@ -1,5 +1,6 @@
 [package]
 name = "pipeboom"
+description = "Get Apple Music listening status in your Discord live activities"
 version = "3.0.0"
 edition = "2024"
 
@@ -16,3 +17,4 @@ log = "0.4"
 humantime = "2.2"
 discord-rich-presence = { git = "https://github.com/vionya/discord-rich-presence" }
 tokio-stream = { version = "0.1", features = ["full"] }
+clap = { version = "4.5.39", features = ["derive"] }

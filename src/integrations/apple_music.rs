@@ -4,11 +4,11 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 
 use crate::core::{
-    error::{AppError, AppResult},
+    error::{PipeBoomError, PipeBoomResult},
     models::{PlayerState, Song},
 };
 
-fn run_osascript<T: DeserializeOwned>(script: String) -> AppResult<T> {
+fn run_osascript<T: DeserializeOwned>(script: String) -> PipeBoomResult<T> {
     let function = format!("(() => JSON.stringify({}))();", script);
     let command_output = Command::new("osascript")
         .arg("-l")
@@ -21,15 +21,21 @@ fn run_osascript<T: DeserializeOwned>(script: String) -> AppResult<T> {
         Ok(o) => {
             if !o.status.success() {
                 let stderr = String::from_utf8_lossy(&o.stderr);
-                log::debug!("osascript stderr: {}", stderr);
-                return Err(AppError::AppleMusic(format!(
-                    "osascript execution failed: {}",
-                    stderr.trim()
+                return Err(PipeBoomError::AppleMusic(format!(
+                    "Osascript execution failed for script '{}': {} (exit code: {})",
+                    script,
+                    stderr.trim(),
+                    o.status.code().unwrap_or(-1)
                 )));
             }
             o.stdout
         }
-        Err(e) => return Err(AppError::Io(e.to_string())),
+        Err(e) => {
+            return Err(PipeBoomError::AppleMusic(format!(
+                "Failed to execute osascript: {} (script: {})",
+                e, script
+            )));
+        }
     };
 
     let res = String::from_utf8_lossy(&output_stdout).to_string();
@@ -40,11 +46,11 @@ fn run_osascript<T: DeserializeOwned>(script: String) -> AppResult<T> {
             e,
             res
         );
-        AppError::Parse(format!("Failed to parse Apple Music script output: {}", e))
+        PipeBoomError::Parse(format!("Failed to parse Apple Music script output: {}", e))
     })
 }
 
-pub fn get_is_open(app_name: &str) -> AppResult<bool> {
+pub fn get_is_open(app_name: &str) -> PipeBoomResult<bool> {
     let script = format!(
         "Application('System Events').processes['{}'].exists()",
         app_name
@@ -53,12 +59,12 @@ pub fn get_is_open(app_name: &str) -> AppResult<bool> {
     run_osascript(script)
 }
 
-pub fn get_player_state(app_name: &str) -> AppResult<PlayerState> {
+pub fn get_player_state(app_name: &str) -> PipeBoomResult<PlayerState> {
     let script = format!("Application('{}').playerState()", app_name);
     run_osascript(script)
 }
 
-pub fn get_current_song(app_name: &str) -> AppResult<Option<Song>> {
+pub fn get_current_song(app_name: &str) -> PipeBoomResult<Option<Song>> {
     let script = format!(
         "{{
           ...Application('{0}').currentTrack().properties(),
@@ -78,9 +84,9 @@ pub fn get_current_song(app_name: &str) -> AppResult<Option<Song>> {
             }
             serde_json::from_value::<Song>(val)
                 .map(Some)
-                .map_err(|e| AppError::Parse(format!("Failed to parse song data: {}", e)))
+                .map_err(|e| PipeBoomError::Parse(format!("Failed to parse song data: {}", e)))
         }
-        Err(AppError::AppleMusic(msg)) => {
+        Err(PipeBoomError::AppleMusic(msg)) => {
             log::warn!("Assuming no song due to AppleScript error: {}", msg);
             Ok(None)
         }

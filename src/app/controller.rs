@@ -1,17 +1,20 @@
+use std::time::Duration;
+
 use crate::{
-    config::settings::Config,
     core::{
-        error::{AppError, AppResult},
+        error::{PipeBoomError, PipeBoomResult},
         models::PlayerState,
     },
     integrations::{
         apple_music::{get_current_song, get_is_open, get_player_state},
-        discord::DiscordRpcClient,
+        discord::DiscordClient,
         itunes_api::get_details,
     },
 };
-use tokio::sync::{mpsc, oneshot};
-use tokio::time::sleep;
+use tokio::{
+    sync::{mpsc, oneshot},
+    time::sleep,
+};
 
 #[derive(Debug)]
 pub enum Control {
@@ -22,18 +25,18 @@ pub enum Control {
 }
 
 pub struct Controller {
-    discord_client: Option<DiscordRpcClient>,
+    discord_client: Option<DiscordClient>,
     app_name: &'static str,
-    config: Config,
+    poll_interval: Duration,
     is_running: bool,
 }
 
 impl Controller {
-    pub fn new(app_name: &'static str, config: Config) -> Self {
+    pub fn new(app_name: &'static str, poll_interval: Duration) -> Self {
         Self {
             discord_client: None,
             app_name,
-            config,
+            poll_interval,
             is_running: false,
         }
     }
@@ -63,7 +66,7 @@ impl Controller {
                         }
                     }
                 }
-                _ = sleep(self.config.poll_interval), if self.is_running => {
+                _ = sleep(self.poll_interval), if self.is_running => {
                     if let Err(e) = self.run_cycle().await {
                         if e.is_recoverable() {
                             log::warn!("Recoverable player error: {}", e);
@@ -77,7 +80,7 @@ impl Controller {
         }
     }
 
-    async fn start(&mut self) -> AppResult<()> {
+    async fn start(&mut self) -> PipeBoomResult<()> {
         if self.is_running {
             return Ok(());
         }
@@ -90,7 +93,7 @@ impl Controller {
         Ok(())
     }
 
-    async fn stop(&mut self) -> AppResult<()> {
+    async fn stop(&mut self) -> PipeBoomResult<()> {
         if !self.is_running {
             return Ok(());
         }
@@ -110,16 +113,16 @@ impl Controller {
         Ok(())
     }
 
-    async fn wait_for_applications(&self) -> AppResult<()> {
+    async fn wait_for_applications(&self) -> PipeBoomResult<()> {
         log::info!("Waiting for Discord and {}...", self.app_name);
 
         loop {
             let discord_open = get_is_open("Discord").map_err(|e| {
-                AppError::AppleMusic(format!("Failed to check if Discord is open: {}", e))
+                PipeBoomError::Internal(format!("Failed to check if Discord is open: {}", e))
             })?;
 
             let music_open = get_is_open(self.app_name).map_err(|e| {
-                AppError::AppleMusic(format!(
+                PipeBoomError::Internal(format!(
                     "Failed to check if {} is open: {}",
                     self.app_name, e
                 ))
@@ -136,16 +139,16 @@ impl Controller {
                 self.app_name,
                 music_open
             );
-            sleep(self.config.poll_interval).await;
+            sleep(self.poll_interval).await;
         }
 
         Ok(())
     }
 
-    fn initialize_discord_client(&mut self) -> AppResult<()> {
+    fn initialize_discord_client(&mut self) -> PipeBoomResult<()> {
         log::info!("Initializing Discord client");
 
-        let mut discord_client = DiscordRpcClient::new(self.config.discord_app_id);
+        let mut discord_client = DiscordClient::new();
         discord_client.connect()?;
 
         self.discord_client = Some(discord_client);
@@ -154,36 +157,38 @@ impl Controller {
         Ok(())
     }
 
-    async fn run_cycle(&mut self) -> AppResult<()> {
+    async fn run_cycle(&mut self) -> PipeBoomResult<()> {
         let discord_client = self.discord_client.as_mut().ok_or_else(|| {
-            AppError::Internal("Discord client not initialized in player cycle".to_string())
+            PipeBoomError::Internal("Discord client not initialized in player cycle".to_string())
         })?;
 
-        if !get_is_open("Discord")
-            .map_err(|e| AppError::AppleMusic(format!("Failed to check Discord status: {}", e)))?
-        {
-            log::info!("Discord closed. Stopping player.");
-            return Err(AppError::Discord("Discord application closed".to_string()));
+        if !get_is_open("Discord").map_err(|e| {
+            PipeBoomError::Internal(format!("Failed to check Discord status: {}", e))
+        })? {
+            log::info!("Discord closed. Stopping player");
+            return Err(PipeBoomError::Discord(
+                "Discord application closed".to_string(),
+            ));
         }
 
         if !get_is_open(self.app_name).map_err(|e| {
-            AppError::AppleMusic(format!("Failed to check {} status: {}", self.app_name, e))
+            PipeBoomError::Internal(format!("Failed to check {} status: {}", self.app_name, e))
         })? {
             log::info!(
-                "{} closed. Clearing activity and stopping player.",
+                "{} closed. Clearing activity and stopping player",
                 self.app_name
             );
             discord_client.clear_activity()?;
-            return Err(AppError::AppleMusic(format!("{} closed", self.app_name)));
+            return Err(PipeBoomError::Internal(format!("{} closed", self.app_name)));
         }
 
         let player_state = get_player_state(self.app_name)
-            .map_err(|e| AppError::AppleMusic(format!("Failed to get player state: {}", e)))?;
+            .map_err(|e| PipeBoomError::Internal(format!("Failed to get player state: {}", e)))?;
 
         match player_state {
             PlayerState::Playing => {
                 if let Some(song) = get_current_song(self.app_name).map_err(|e| {
-                    AppError::AppleMusic(format!("Failed to get current song: {}", e))
+                    PipeBoomError::Internal(format!("Failed to get current song: {}", e))
                 })? {
                     log::debug!("Currently playing: {} - {}", song.artist, song.name);
 
