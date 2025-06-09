@@ -69,6 +69,11 @@ impl Controller {
                 _ = sleep(self.poll_interval), if self.is_running => {
                     if let Err(e) = self.run_cycle().await {
                         if e.is_recoverable() {
+                            if let PipeBoomError::Discord(_) = e {
+                                if let Err(err) = self.initialize_discord_client() {
+                                    log::error!("Failed to reinitialize Discord client: {}", err);
+                                };
+                            };
                             log::warn!("Recoverable player error: {}", e);
                         } else {
                             log::error!("Fatal player error: {}", e);
@@ -179,7 +184,10 @@ impl Controller {
                 self.app_name
             );
             discord_client.clear_activity()?;
-            return Err(PipeBoomError::Internal(format!("{} closed", self.app_name)));
+            return Err(PipeBoomError::AppleMusic(format!(
+                "{} closed",
+                self.app_name
+            )));
         }
 
         let player_state = get_player_state(self.app_name)

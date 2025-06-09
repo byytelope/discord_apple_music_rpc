@@ -1,6 +1,10 @@
 use std::{fs, time::SystemTime};
 
-use fern::{Dispatch, log_file};
+use fern::{
+    Dispatch,
+    colors::{Color, ColoredLevelConfig},
+    log_file,
+};
 use log::LevelFilter;
 
 use crate::core::error::{PipeBoomError, PipeBoomResult};
@@ -26,17 +30,17 @@ pub fn setup_logging(verbosity: LevelFilter, max_log_size: u64) -> PipeBoomResul
         }
     }
 
+    let colors = ColoredLevelConfig::new().info(Color::Green);
+
     let base_config = Dispatch::new()
         .level(verbosity)
         .level_for("surf", LevelFilter::Warn)
-        .format(|out, msg, rec| {
+        .format(move |out, msg, rec| {
             out.finish(format_args!(
-                "{} [{} -> {}::{}::{}] {}",
+                "{} [{} -> {}] {}",
                 humantime::format_rfc3339_seconds(SystemTime::now()),
-                rec.level(),
+                colors.color(rec.level()),
                 rec.target(),
-                rec.file().unwrap_or_default(),
-                rec.line().unwrap_or_default(),
                 msg
             ))
         });

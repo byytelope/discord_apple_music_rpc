@@ -21,7 +21,7 @@ fn run_osascript<T: DeserializeOwned>(script: String) -> PipeBoomResult<T> {
         Ok(o) => {
             if !o.status.success() {
                 let stderr = String::from_utf8_lossy(&o.stderr);
-                return Err(PipeBoomError::AppleMusic(format!(
+                return Err(PipeBoomError::Osascript(format!(
                     "Osascript execution failed for script '{}': {} (exit code: {})",
                     script,
                     stderr.trim(),
@@ -31,7 +31,7 @@ fn run_osascript<T: DeserializeOwned>(script: String) -> PipeBoomResult<T> {
             o.stdout
         }
         Err(e) => {
-            return Err(PipeBoomError::AppleMusic(format!(
+            return Err(PipeBoomError::Osascript(format!(
                 "Failed to execute osascript: {} (script: {})",
                 e, script
             )));
@@ -86,7 +86,7 @@ pub fn get_current_song(app_name: &str) -> PipeBoomResult<Option<Song>> {
                 .map(Some)
                 .map_err(|e| PipeBoomError::Parse(format!("Failed to parse song data: {}", e)))
         }
-        Err(PipeBoomError::AppleMusic(msg)) => {
+        Err(PipeBoomError::Osascript(msg)) => {
             log::warn!("Assuming no song due to AppleScript error: {}", msg);
             Ok(None)
         }
